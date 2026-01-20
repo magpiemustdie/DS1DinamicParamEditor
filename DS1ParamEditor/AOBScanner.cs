@@ -11,7 +11,7 @@ using SharpGen.Runtime;
 using System.Collections.Concurrent;
 using System.Security.Cryptography.Xml;
 
-namespace DS1DrawParamEditor
+namespace DS1ParamEditor
 {
     public class AOBScanner
     {

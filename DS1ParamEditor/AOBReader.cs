@@ -2,7 +2,7 @@
 using System.Diagnostics;
 using SoulsFormats;
 
-namespace DS1DrawParamEditor
+namespace DS1ParamEditor
 {
     public class AOBReader
     {

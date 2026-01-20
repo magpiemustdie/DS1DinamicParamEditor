@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Numerics;
 using Veldrid.MetalBindings;
 
-namespace DS1DrawParamEditor
+namespace DS1ParamEditor
 {
     class Program
     {

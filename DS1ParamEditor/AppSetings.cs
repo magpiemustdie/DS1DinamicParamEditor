@@ -5,7 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace FileParser
+namespace DS1ParamEditor
 {
     class AppConfig
     {

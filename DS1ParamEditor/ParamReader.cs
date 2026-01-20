@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using SoulsFormats;
 
-namespace DS1DrawParamEditor
+namespace DS1ParamEditor
 {
     public class ParamContainer
     {

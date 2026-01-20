@@ -7,13 +7,12 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using FileParser;
 using ImGuiNET;
 using SoulsFormats;
 using Veldrid;
 using Vortice.Win32;
 
-namespace DS1DrawParamEditor
+namespace DS1ParamEditor
 {
     public class MainWindow
     {
@@ -23,7 +22,7 @@ namespace DS1DrawParamEditor
         private Dictionary<string, nint> addresses = [];
         private List<ParamContainer>? paramContainers;
 
-        ImGuiChildFlags _childFlags = ImGuiChildFlags.Borders | (ImGuiChildFlags.AutoResizeX & ImGuiChildFlags.AutoResizeY & ImGuiChildFlags.AlwaysAutoResize);
+        ImGuiChildFlags _childFlags = ImGuiChildFlags.Borders | ImGuiChildFlags.AutoResizeX & ImGuiChildFlags.AutoResizeY & ImGuiChildFlags.AlwaysAutoResize;
         Vector2 _controlSize = new(500, 150);
         Vector2 _tableSize;
         Vector2 _tableSizeMin = Vector2.Zero;
@@ -195,7 +194,7 @@ namespace DS1DrawParamEditor
             }
         }
 
-        
+
 
         public void GetParams()
         {
@@ -240,7 +239,7 @@ namespace DS1DrawParamEditor
                 {
                     var addr = aobReader.AOBScan(paramContainers[selectedParamFileKey].Bnd3File.Files[selectedParamKey].Bytes, autoPattern, patternSize);
 
-                    if (addr != IntPtr.Zero)
+                    if (addr != nint.Zero)
                         addresses[selectedParamName] = addr;
                 }
 
@@ -321,7 +320,7 @@ namespace DS1DrawParamEditor
             }
         }
 
-        
+
         private void HandleSByteField(nint address, long offset, int typeOffset, PARAM.Cell cell, int paramId)
         {
             int cellValue = Convert.ToInt16(aobReader.ReadMemory(address, offset + typeOffset, cell.Def.DisplayType));
@@ -427,7 +426,7 @@ namespace DS1DrawParamEditor
 
         private void HandleFloatField(nint address, long offset, int typeOffset, PARAM.Cell cell, int paramId)
         {
-            float cellValue = (float)(aobReader.ReadMemory(address, offset + typeOffset, cell.Def.DisplayType));
+            float cellValue = (float)aobReader.ReadMemory(address, offset + typeOffset, cell.Def.DisplayType);
             ImGui.SliderFloat($"{cell.Def.InternalName} {cell.Def.DisplayType} ##{paramId}", ref cellValue,
                 Convert.ToSingle(cell.Def.Minimum), Convert.ToSingle(cell.Def.Maximum));
 
@@ -441,7 +440,7 @@ namespace DS1DrawParamEditor
                 cell.Value = Convert.ToSingle(cellValue);
             }
         }
-            
+
 
         private void HandleDoubleField(nint address, long offset, int typeOffset, PARAM.Cell cell, int paramId)
         {
@@ -464,7 +463,7 @@ namespace DS1DrawParamEditor
         {
             _selectedExe = _selectedExePath = _selectedGamePath = _selectedParamDefPath = _selectedParamPath = _selectedDrawParamPath = string.Empty;
 
-            var thread = new System.Threading.Thread(() =>
+            var thread = new Thread(() =>
             {
                 using (var openFileDialog = new OpenFileDialog())
                 {
@@ -489,7 +488,7 @@ namespace DS1DrawParamEditor
                 }
             });
 
-            thread.SetApartmentState(System.Threading.ApartmentState.STA);
+            thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
             thread.Join(); // Wait for the dialog to close
         }
@@ -498,7 +497,7 @@ namespace DS1DrawParamEditor
         {
             switch (_selectedExe)
             {
-                case ("DARKSOULS"):
+                case "DARKSOULS":
                     {
                         if (File.Exists(_selectedGamePath + "\\paramdef\\paramdef.paramdefbnd"))
                             _selectedParamDefPath = _selectedGamePath + "\\paramdef\\paramdef.paramdefbnd";
@@ -509,7 +508,7 @@ namespace DS1DrawParamEditor
                         _selectedDrawParamPath = _selectedGamePath + "\\param\\DrawParam";
                         break;
                     }
-                case ("DarkSoulsRemastered"):
+                case "DarkSoulsRemastered":
                     {
                         if (File.Exists(_selectedGamePath + "\\paramdef\\paramdef.paramdefbnd"))
                             _selectedParamDefPath = _selectedGamePath + "\\paramdef\\paramdef.paramdefbnd";

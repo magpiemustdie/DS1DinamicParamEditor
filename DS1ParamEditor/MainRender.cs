@@ -12,7 +12,7 @@ using Vulkan;
 using System.Linq.Expressions;
 
 
-namespace DS1DrawParamEditor
+namespace DS1ParamEditor
 {
     internal class ImGuiMainRender
     {
