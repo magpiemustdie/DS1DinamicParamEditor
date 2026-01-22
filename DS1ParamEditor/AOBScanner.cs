@@ -38,7 +38,7 @@ namespace DS1ParamEditor
 
         private readonly Process process;
         private readonly IntPtr processHandle;
-
+            
         public AOBScanner(Process targetProcess)
         {
             process = targetProcess;

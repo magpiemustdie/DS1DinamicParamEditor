@@ -16,25 +16,21 @@ namespace DS1ParamEditor
 {
     public class MainWindow
     {
-        private ParamReader? paramReader;
-        private AOBReader? aobReader;
+        private AppConfig config = new();
+        private ParamReader? paramReader = new();
+        private AOBReader? aobReader = new();
 
         private Dictionary<string, nint> addresses = [];
-        private List<ParamContainer>? paramContainers;
+        private List<ParamContainer>? paramContainers = [];
 
-        ImGuiChildFlags _childFlags = ImGuiChildFlags.Borders | ImGuiChildFlags.AutoResizeX & ImGuiChildFlags.AutoResizeY & ImGuiChildFlags.AlwaysAutoResize;
-        Vector2 _controlSize = new(500, 150);
-        Vector2 _tableSize;
-        Vector2 _tableSizeMin = Vector2.Zero;
-        Vector2 _tableSizeMax = new(900, 900);
+        private ImGuiChildFlags _childFlags = ImGuiChildFlags.Borders | ImGuiChildFlags.AutoResizeX & ImGuiChildFlags.AutoResizeY & ImGuiChildFlags.AlwaysAutoResize;
+        private Vector2 _controlSize = new(500, 150);
+        private Vector2 _tableSize = new();
+        private Vector2 _tableSizeMin = Vector2.Zero;
+        private Vector2 _tableSizeMax = new(900, 900);
 
         //Selection of game path
-        private string _selectedExe = string.Empty;
-        private string _selectedExePath = string.Empty;
-        private string _selectedGamePath = string.Empty;
-        private string _selectedParamPath = string.Empty;
-        private string _selectedDrawParamPath = string.Empty;
-        private string _selectedParamDefPath = string.Empty;
+
 
         //Selection of file
         private string[] paramNameList = [];
@@ -50,35 +46,18 @@ namespace DS1ParamEditor
         private string selectedParamName = string.Empty;
 
         //Hook
-        bool showHookButton = false;
-        int patternSize = 100;
-        bool autoPattern = false;
+        private bool showHookButton = false;
+        private int patternSize = 100;
+        private bool autoPattern = false;
 
         //bool showSaveButton = false;
 
         //Table
-        bool showParamTable = false;
+        private bool showParamTable = false;
 
         public MainWindow()
         {
-            Console.WriteLine("Created by ElsterDePie v.0.4 \nIf nothing works, delete AppSettings.json or imgui.ini :3");
-            if (File.Exists("AppSettings.json"))
-            {
-                AppConfig appconfig = AppConfig.Load("AppSettings.json");
-                Console.WriteLine("Read AppSettings.json");
-                if (!string.IsNullOrEmpty(appconfig.ExePath))
-                {
-                    Console.WriteLine($"ExePath: {appconfig.ExePath}");
-                    _selectedExePath = appconfig.ExePath;
-                    _selectedExe = Path.GetFileNameWithoutExtension(_selectedExePath);
-                    _selectedGamePath = _selectedExePath.Substring(0, _selectedExePath.LastIndexOf('\\'));
-                    TryToGetParams();
-                }
-                else
-                    ShowFileDialog();
-            }
-            else
-                ShowFileDialog();
+            config.TryToGetGamePath();
         }
 
         public void BuildWindow()
@@ -99,12 +78,16 @@ namespace DS1ParamEditor
             {
                 if (ImGui.Button("Set exe path"))
                 {
-                    ShowFileDialog();
+                    config.ShowFileDialog();
                 }
                 ImGui.SameLine();
-                if (!string.IsNullOrEmpty(_selectedExe))
+                if (!string.IsNullOrEmpty(config.SelectedExe))
                 {
-                    ImGui.Text(_selectedExe);
+                    ImGui.Text(config.SelectedExe);
+                }
+                else
+                {
+                    ImGui.Text("Please select exe");
                 }
 
                 if (ImGui.Button("Read params files"))
@@ -194,11 +177,11 @@ namespace DS1ParamEditor
             }
         }
 
-
-
         public void GetParams()
         {
-            if (string.IsNullOrEmpty(_selectedParamDefPath) || string.IsNullOrEmpty(_selectedParamPath) || string.IsNullOrEmpty(_selectedDrawParamPath))
+            if (string.IsNullOrEmpty(config.SelectedParamDefPath) || 
+                string.IsNullOrEmpty(config.SelectedParamPath) || 
+                string.IsNullOrEmpty(config.SelectedDrawParamPath))
                 return;
 
             paramContainers = [];
@@ -210,9 +193,9 @@ namespace DS1ParamEditor
             paramReader ??= new ParamReader();
 
             if (editDrawParams)
-                paramContainers = paramReader.ReadParamMass(_selectedParamDefPath, _selectedDrawParamPath);
+                paramContainers = paramReader.ReadParamMass(config.SelectedParamDefPath, config.SelectedDrawParamPath);
             else
-                paramContainers = paramReader.ReadParamMass(_selectedParamDefPath, _selectedParamPath);
+                paramContainers = paramReader.ReadParamMass(config.SelectedParamDefPath, config.SelectedParamPath);
 
             paramFileNameList = paramContainers.Select(p => p.Name).ToArray();
             showParamFileSelector = true;
@@ -225,8 +208,8 @@ namespace DS1ParamEditor
 
         public void GetAddress()
         {
-            if (!string.IsNullOrEmpty(_selectedExe))
-                aobReader = new AOBReader(_selectedExe);
+            if (!string.IsNullOrEmpty(config.SelectedExe))
+                aobReader = new AOBReader(config.SelectedExe);
             else
                 return;
 
@@ -456,70 +439,6 @@ namespace DS1ParamEditor
             if (ImGui.IsItemDeactivatedAfterEdit())
             {
                 cell.Value = Convert.ToDouble(cellValue);
-            }
-        }
-
-        private void ShowFileDialog()
-        {
-            _selectedExe = _selectedExePath = _selectedGamePath = _selectedParamDefPath = _selectedParamPath = _selectedDrawParamPath = string.Empty;
-
-            var thread = new Thread(() =>
-            {
-                using (var openFileDialog = new OpenFileDialog())
-                {
-                    openFileDialog.Filter = "Executable files (*.exe)|*.exe|All files (*.*)|*.*";
-                    openFileDialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-                    openFileDialog.Title = "Select an executable file";
-
-                    if (openFileDialog.ShowDialog() == DialogResult.OK)
-                    {
-                        _selectedExePath = openFileDialog.FileName;
-                        _selectedExe = Path.GetFileNameWithoutExtension(_selectedExePath);
-                        _selectedGamePath = _selectedExePath.Substring(0, _selectedExePath.LastIndexOf('\\'));
-
-                        TryToGetParams();
-
-                        AppConfig appConfig = new()
-                        {
-                            ExePath = _selectedExePath
-                        };
-                        appConfig.Save("AppSettings.json");
-                    }
-                }
-            });
-
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-            thread.Join(); // Wait for the dialog to close
-        }
-
-        private void TryToGetParams()
-        {
-            switch (_selectedExe)
-            {
-                case "DARKSOULS":
-                    {
-                        if (File.Exists(_selectedGamePath + "\\paramdef\\paramdef.paramdefbnd"))
-                            _selectedParamDefPath = _selectedGamePath + "\\paramdef\\paramdef.paramdefbnd";
-                        else if (File.Exists(_selectedGamePath + "\\paramdef\\paramdef.paramdefbnd.dcx"))
-                            _selectedParamDefPath = _selectedGamePath + "\\paramdef\\paramdef.paramdefbnd.dcx";
-
-                        _selectedParamPath = _selectedGamePath + "\\param\\GameParam";
-                        _selectedDrawParamPath = _selectedGamePath + "\\param\\DrawParam";
-                        break;
-                    }
-                case "DarkSoulsRemastered":
-                    {
-                        if (File.Exists(_selectedGamePath + "\\paramdef\\paramdef.paramdefbnd"))
-                            _selectedParamDefPath = _selectedGamePath + "\\paramdef\\paramdef.paramdefbnd";
-
-                        else if (File.Exists(_selectedGamePath + "\\paramdef\\paramdef.paramdefbnd.dcx"))
-                            _selectedParamDefPath = _selectedGamePath + "\\paramdef\\paramdef.paramdefbnd.dcx";
-
-                        _selectedParamPath = _selectedGamePath + "\\param\\GameParam";
-                        _selectedDrawParamPath = _selectedGamePath + "\\param\\DrawParam";
-                        break;
-                    }
             }
         }
     }

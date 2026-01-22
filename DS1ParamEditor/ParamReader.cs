@@ -55,9 +55,24 @@ namespace DS1ParamEditor
                 var param = PARAM.Read(file.Bytes);
 
                 if (param.ApplyParamdefCarefully(paramdefs))
+                {
                     parms[name] = param;
+                    Console.WriteLine($"{name} => [OK]");
+                }
                 else
-                    parms[name] = param;
+                {
+                    try
+                    {
+                        param.ApplyParamdef(paramdefs.Find(def => def.ParamType == param.ParamType));
+                        parms[name] = param;
+                        Console.WriteLine($"{name} => [OK]?");
+                    }
+                    catch
+                    {
+                        parms[name] = param;
+                        Console.WriteLine($"{name} => [broken]");
+                    }
+                }
             }
 
             return (parambnd, parms);

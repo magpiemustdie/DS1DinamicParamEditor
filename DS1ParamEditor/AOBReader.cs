@@ -6,10 +6,11 @@ namespace DS1ParamEditor
 {
     public class AOBReader
     {
-        private readonly AOBScanner _scanner;
-        private readonly Process _targetProcess;
+        private readonly AOBScanner? _scanner;
+        private readonly Process? _targetProcess;
         public bool IsProcessValid => _targetProcess != null && !_targetProcess.HasExited;
 
+        public AOBReader() { }
         public AOBReader(string processName)
         {
             try
