@@ -85,8 +85,6 @@ namespace DS1ParamEditor
                     this.SelectedExePath = loadedConfig.SelectedExePath;
                     this.SelectedGamePath = loadedConfig.SelectedGamePath;
                     this.SelectedParamPath = loadedConfig.SelectedParamPath;
-                    this.SelectedDrawParamPath = loadedConfig.SelectedDrawParamPath;
-                    this.SelectedParamDefPath = loadedConfig.SelectedParamDefPath;
                 }
             }
             catch (Exception ex)
@@ -99,29 +97,12 @@ namespace DS1ParamEditor
         {
             switch (this.SelectedExe)
             {
-                case "DARKSOULS":
+                case "DarkSoulsIII":
                     {
-                        if (File.Exists(this.SelectedGamePath + "\\paramdef\\paramdef.paramdefbnd"))
-                            this.SelectedParamDefPath = this.SelectedGamePath + "\\paramdef\\paramdef.paramdefbnd";
-                        else if (File.Exists(this.SelectedGamePath + "\\paramdef\\paramdef.paramdefbnd.dcx"))
-                            this.SelectedParamDefPath = this.SelectedGamePath + "\\paramdef\\paramdef.paramdefbnd.dcx";
-
                         this.SelectedParamPath = this.SelectedGamePath + "\\param\\GameParam";
-                        this.SelectedDrawParamPath = this.SelectedGamePath + "\\param\\DrawParam";
                         break;
                     }
-                case "DarkSoulsRemastered":
-                    {
-                        if (File.Exists(this.SelectedGamePath + "\\paramdef\\paramdef.paramdefbnd"))
-                            this.SelectedParamDefPath = this.SelectedGamePath + "\\paramdef\\paramdef.paramdefbnd";
 
-                        else if (File.Exists(this.SelectedGamePath + "\\paramdef\\paramdef.paramdefbnd.dcx"))
-                            this.SelectedParamDefPath = this.SelectedGamePath + "\\paramdef\\paramdef.paramdefbnd.dcx";
-
-                        this.SelectedParamPath = this.SelectedGamePath + "\\param\\GameParam";
-                        this.SelectedDrawParamPath = this.SelectedGamePath + "\\param\\DrawParam";
-                        break;
-                    }
                 default:
                     {
                         break;

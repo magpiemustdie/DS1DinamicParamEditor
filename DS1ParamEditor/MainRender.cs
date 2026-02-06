@@ -16,7 +16,7 @@ namespace DS1ParamEditor
 {
     internal class ImGuiMainRender
     {
-        MainWindow mainWindow = new();
+        GPARAMEditor mainWindow = new();
         public void Render()
         {
             ImGui.SetNextWindowPos(new Vector2(0, 0), ImGuiCond.Appearing);
