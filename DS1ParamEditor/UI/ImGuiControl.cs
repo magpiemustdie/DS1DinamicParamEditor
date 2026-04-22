@@ -67,6 +67,28 @@ namespace DS1ParamEditor
                 ImGuiConfigFlags.DockingEnable;
             io.Fonts.Flags |= ImFontAtlasFlags.NoBakedLines;
 
+            // Load font with Japanese glyph support for param row names
+            // Try common Windows CJK fonts
+            string[] cjkFonts = {
+                @"C:\Windows\Fonts\YuGothB.ttc",
+                @"C:\Windows\Fonts\msgothic.ttc",
+                @"C:\Windows\Fonts\meiryo.ttc",
+                @"C:\Windows\Fonts\YuGothM.ttc"
+            };
+            bool cjkLoaded = false;
+            foreach (var fontPath in cjkFonts)
+            {
+                if (System.IO.File.Exists(fontPath))
+                {
+                    var ranges = io.Fonts.GetGlyphRangesJapanese();
+                    io.Fonts.AddFontFromFileTTF(fontPath, 13f, null, ranges);
+                    cjkLoaded = true;
+                    break;
+                }
+            }
+            if (!cjkLoaded)
+                io.Fonts.AddFontDefault();
+
             CreateDeviceResources(gd, outputDescription);
             SetPerFrameImGuiData(1f / 60f);
             ImGui.NewFrame();

@@ -32,9 +32,11 @@ namespace DS1ParamEditor
 
         public ParamTableView(EditorState state) => _state = state;
 
-        public void Draw()
+        public void Draw() => DrawParam(_state.SelectedParam);
+
+        /// <summary>Draws the table for a specific param (used in multi-param view).</summary>
+        public void DrawParam(LoadedParam? param)
         {
-            var param = _state.SelectedParam;
             if (param == null) return;
 
             var addr = _state.GetHookedAddress(param.Name);
@@ -67,13 +69,13 @@ namespace DS1ParamEditor
 
             // Filters
             ImGui.SetNextItemWidth(200);
-            ImGui.InputText("Row filter", ref _rowFilter, 64);
+            ImGui.InputText("Row filter##" + param.Name, ref _rowFilter, 64);
             ImGui.SameLine();
             ImGui.SetNextItemWidth(200);
-            ImGui.InputText("Field filter", ref _fieldFilter, 64);
+            ImGui.InputText("Field filter##" + param.Name, ref _fieldFilter, 64);
             ImGui.Separator();
 
-            ImGui.BeginChild("ParamTableScroll", Vector2.Zero, ImGuiChildFlags.None,
+            ImGui.BeginChild("ParamTableScroll##" + param.Name, Vector2.Zero, ImGuiChildFlags.None,
                 ImGuiWindowFlags.HorizontalScrollbar);
 
             foreach (var row in param.Param.Rows)
@@ -83,10 +85,9 @@ namespace DS1ParamEditor
                     !rowLabel.Contains(_rowFilter, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                if (!ImGui.CollapsingHeader($"{rowLabel}##r{row.ID}"))
+                if (!ImGui.CollapsingHeader($"{rowLabel}##r{row.ID}_{param.Name}"))
                     continue;
 
-                // Bulk-read the entire row data block once per refresh interval
                 _rowCache.TryGetValue(row.ID, out byte[]? rowBytes);
                 if (refresh || rowBytes == null)
                 {
@@ -95,19 +96,19 @@ namespace DS1ParamEditor
                     {
                         nint rowAddr = baseAddr + (nint)row.DataOffset;
                         var  fresh   = process.ReadBytes(rowAddr, readLen);
-                        if (fresh != null)
-                        {
-                            _rowCache[row.ID] = fresh;
-                            rowBytes = fresh;
-                        }
+                        if (fresh != null) { _rowCache[row.ID] = fresh; rowBytes = fresh; }
                     }
                 }
 
                 ImGui.Indent();
-
                 int fieldOffset = 0;
-                foreach (var cell in row.Cells)
+                // ToList() once per row render — avoid repeated allocation
+                var cells = row.Cells is List<PARAM.Cell> cl ? cl : row.Cells.ToList();
+                var renderedColorGroups = new System.Collections.Generic.HashSet<string>();
+
+                for (int ci = 0; ci < cells.Count; ci++)
                 {
+                    var cell = cells[ci];
                     int fieldSize = FieldSize(cell.Def.DisplayType, cell.Def.ArrayLength);
 
                     if (cell.Def.DisplayType != PARAMDEF.DefType.dummy8)
@@ -118,12 +119,50 @@ namespace DS1ParamEditor
                             double cached    = ReadFromCache(rowBytes, fieldOffset, cell);
                             nint   fieldAddr = baseAddr + (nint)row.DataOffset + fieldOffset;
                             DrawField(process, fieldAddr, cell, row.ID, fieldOffset, cached, rowBytes);
+
+                            // After drawing A field — add color picker for the RGBA group
+                            var rgbGroupForA = TryFindRgbGroupFromA(cells, ci);
+                            if (rgbGroupForA != null)
+                            {
+                                string groupKey = rgbGroupForA.Value.cellR.Def.InternalName;
+                                if (!renderedColorGroups.Contains(groupKey))
+                                {
+                                    renderedColorGroups.Add(groupKey);
+                                    DrawColorField(process, baseAddr, row, rowBytes, rgbGroupForA.Value, param.Name);
+                                }
+                            }
+                            // Fallback: if no A field exists, show after B
+                            else
+                            {
+                                var rgbGroupForB = TryFindRgbGroupFromB(cells, ci);
+                                if (rgbGroupForB != null)
+                                {
+                                    string groupKey = rgbGroupForB.Value.cellR.Def.InternalName;
+                                    // Only show if no A field will come later
+                                    bool hasAlpha = cells.Any(c =>
+                                    {
+                                        string nb = rgbGroupForB.Value.cellB.Def.InternalName;
+                                        // Check if there's a matching A field
+                                        int idx = nb.IndexOf("colB", StringComparison.OrdinalIgnoreCase);
+                                        if (idx >= 0)
+                                        {
+                                            string aName = nb[..idx] + "colA" + nb[(idx+4)..];
+                                            return c.Def.InternalName.Equals(aName, StringComparison.OrdinalIgnoreCase);
+                                        }
+                                        string stem = nb.EndsWith("B") ? nb[..^1] : nb;
+                                        return c.Def.InternalName.Equals(stem + "A", StringComparison.OrdinalIgnoreCase);
+                                    });
+                                    if (!hasAlpha && !renderedColorGroups.Contains(groupKey))
+                                    {
+                                        renderedColorGroups.Add(groupKey);
+                                        DrawColorField(process, baseAddr, row, rowBytes, rgbGroupForB.Value, param.Name);
+                                    }
+                                }
+                            }
                         }
                     }
-
                     fieldOffset += fieldSize;
                 }
-
                 ImGui.Unindent();
             }
 
@@ -185,12 +224,15 @@ namespace DS1ParamEditor
             string id   = $"##{cell.Def.InternalName}_{rowId}";
             string name = $"{cell.Def.InternalName} ({TypeLabel(type)})";
 
+            const float FIELD_WIDTH = 300f;
+
             switch (type)
             {
                 case PARAMDEF.DefType.s8:
                 {
                     int v = (int)(sbyte)cached;
                     (int mn, int mx) = ClampedRange(cell, sbyte.MinValue, sbyte.MaxValue);
+                    ImGui.SetNextItemWidth(FIELD_WIDTH);
                     if (ImGui.SliderInt(name + id, ref v, mn, mx))
                     { var sv = (sbyte)v; process.WriteField(address, type, sv); cell.Value = sv; WriteToCache(rowBytes, fieldOffset, type, v); }
                     break;
@@ -199,6 +241,7 @@ namespace DS1ParamEditor
                 {
                     int v = (int)(byte)cached;
                     (int mn, int mx) = ClampedRange(cell, 0, byte.MaxValue);
+                    ImGui.SetNextItemWidth(FIELD_WIDTH);
                     if (ImGui.SliderInt(name + id, ref v, mn, mx))
                     { var bv = (byte)v; process.WriteField(address, type, bv); cell.Value = bv; WriteToCache(rowBytes, fieldOffset, type, v); }
                     break;
@@ -207,6 +250,7 @@ namespace DS1ParamEditor
                 {
                     int v = (int)(short)cached;
                     (int mn, int mx) = ClampedRange(cell, short.MinValue, short.MaxValue);
+                    ImGui.SetNextItemWidth(FIELD_WIDTH);
                     if (ImGui.SliderInt(name + id, ref v, mn, mx))
                     { var sv = (short)v; process.WriteField(address, type, sv); cell.Value = sv; WriteToCache(rowBytes, fieldOffset, type, v); }
                     break;
@@ -215,6 +259,7 @@ namespace DS1ParamEditor
                 {
                     int v = (int)(ushort)cached;
                     (int mn, int mx) = ClampedRange(cell, 0, ushort.MaxValue);
+                    ImGui.SetNextItemWidth(FIELD_WIDTH);
                     if (ImGui.SliderInt(name + id, ref v, mn, mx))
                     { var uv = (ushort)v; process.WriteField(address, type, uv); cell.Value = uv; WriteToCache(rowBytes, fieldOffset, type, v); }
                     break;
@@ -224,6 +269,7 @@ namespace DS1ParamEditor
                 {
                     int v = (int)cached;
                     (int mn, int mx) = ClampedRange(cell, int.MinValue, int.MaxValue);
+                    ImGui.SetNextItemWidth(FIELD_WIDTH);
                     if (ImGui.InputInt(name + id, ref v))
                     { v = Math.Clamp(v, mn, mx); process.WriteField(address, type, v); cell.Value = v; WriteToCache(rowBytes, fieldOffset, type, v); }
                     break;
@@ -231,6 +277,7 @@ namespace DS1ParamEditor
                 case PARAMDEF.DefType.u32:
                 {
                     int v = (int)(uint)cached;
+                    ImGui.SetNextItemWidth(FIELD_WIDTH);
                     if (ImGui.InputInt(name + id, ref v))
                     { uint uv = (uint)Math.Max(0, v); process.WriteField(address, type, uv); cell.Value = uv; WriteToCache(rowBytes, fieldOffset, type, uv); }
                     break;
@@ -240,6 +287,7 @@ namespace DS1ParamEditor
                 {
                     float v = (float)cached;
                     (float mn, float mx) = ClampedRangeF(cell, -1e6f, 1e6f);
+                    ImGui.SetNextItemWidth(FIELD_WIDTH);
                     if (ImGui.SliderFloat(name + id, ref v, mn, mx))
                     { process.WriteField(address, type, v); cell.Value = v; WriteToCache(rowBytes, fieldOffset, type, v); }
                     break;
@@ -248,6 +296,7 @@ namespace DS1ParamEditor
                 {
                     float v = (float)cached;
                     (float mn, float mx) = ClampedRangeF(cell, -1e6f, 1e6f);
+                    ImGui.SetNextItemWidth(FIELD_WIDTH);
                     if (ImGui.SliderFloat(name + id, ref v, mn, mx))
                     { double dv = v; process.WriteField(address, type, dv); cell.Value = dv; WriteToCache(rowBytes, fieldOffset, type, dv); }
                     break;
@@ -256,6 +305,211 @@ namespace DS1ParamEditor
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────
+
+        private record struct RgbGroup(PARAM.Cell cellR, PARAM.Cell cellG, PARAM.Cell cellB,
+            int offsetR, int offsetG, int offsetB);
+        /// <summary>
+        /// If cell at index ci looks like a Red component, find matching G and B cells.
+        /// Supports patterns: colR/colG/colB, _R/_G/_B, R/G/B suffix.
+        /// </summary>
+        /// <summary>If cell at ci is an A (alpha) component, find the matching R, G, B.</summary>
+        private static RgbGroup? TryFindRgbGroupFromA(List<PARAM.Cell> cells, int ci)
+        {
+            var cellA = cells[ci];
+            string nameA = cellA.Def.InternalName;
+
+            string? nameR = null, nameG = null, nameB = null;
+
+            // Pattern: *colA* → replace colA with colR/colG/colB
+            int colAIdx = nameA.IndexOf("colA", StringComparison.OrdinalIgnoreCase);
+            if (colAIdx >= 0)
+            {
+                string before = nameA[..colAIdx];
+                string after  = nameA[(colAIdx + 4)..]; // after "colA"
+                nameR = before + "colR" + after;
+                nameG = before + "colG" + after;
+                nameB = before + "colB" + after;
+            }
+            // Pattern: ends with A suffix (colA_X → colR_X)
+            else if (nameA.StartsWith("col", StringComparison.OrdinalIgnoreCase) &&
+                     nameA.Length > 3 && nameA[3] == 'A')
+            {
+                string suffix = nameA[4..];
+                nameR = "colR" + suffix;
+                nameG = "colG" + suffix;
+                nameB = "colB" + suffix;
+            }
+            // Generic: ends with A
+            else if (nameA.EndsWith("A", StringComparison.OrdinalIgnoreCase) && nameA.Length > 1)
+            {
+                string stem = nameA[..^1];
+                nameR = stem + "R";
+                nameG = stem + "G";
+                nameB = stem + "B";
+            }
+            else
+                return null;
+
+            PARAM.Cell? cellR = null, cellG = null, cellB = null;
+            int offsetR = 0, offsetG = 0, offsetB = 0;
+
+            int off = 0;
+            foreach (var c in cells)
+            {
+                if (c.Def.InternalName.Equals(nameR, StringComparison.OrdinalIgnoreCase))
+                { cellR = c; offsetR = off; }
+                if (c.Def.InternalName.Equals(nameG, StringComparison.OrdinalIgnoreCase))
+                { cellG = c; offsetG = off; }
+                if (c.Def.InternalName.Equals(nameB, StringComparison.OrdinalIgnoreCase))
+                { cellB = c; offsetB = off; }
+                off += FieldSize(c.Def.DisplayType, c.Def.ArrayLength);
+            }
+
+            if (cellR == null || cellG == null || cellB == null) return null;
+            return new RgbGroup(cellR, cellG, cellB, offsetR, offsetG, offsetB);
+        }
+
+        /// <summary>If cell at ci is a B component, find the matching R and G.</summary>
+        private static RgbGroup? TryFindRgbGroupFromB(List<PARAM.Cell> cells, int ci)
+        {
+            var cellB = cells[ci];
+            string nameB = cellB.Def.InternalName;
+
+            string? nameR = null, nameG = null;
+
+            if (nameB.StartsWith("col", StringComparison.OrdinalIgnoreCase) &&
+                nameB.Length > 3 && nameB[3] == 'B')
+            {
+                string suffix = nameB[4..];
+                nameR = "col" + "R" + suffix;
+                nameG = "col" + "G" + suffix;
+            }
+            else if (nameB.EndsWith("B", StringComparison.OrdinalIgnoreCase) && nameB.Length > 1)
+            {
+                string stem = nameB[..^1];
+                nameR = stem + "R";
+                nameG = stem + "G";
+            }
+            else
+                return null;
+
+            PARAM.Cell? cellR = null, cellG = null;
+            int offsetR = 0, offsetG = 0, offsetB = 0;
+
+            int off = 0;
+            foreach (var c in cells)
+            {
+                if (c == cellB) offsetB = off;
+                if (c.Def.InternalName.Equals(nameR, StringComparison.OrdinalIgnoreCase))
+                { cellR = c; offsetR = off; }
+                if (c.Def.InternalName.Equals(nameG, StringComparison.OrdinalIgnoreCase))
+                { cellG = c; offsetG = off; }
+                off += FieldSize(c.Def.DisplayType, c.Def.ArrayLength);
+            }
+
+            if (cellR == null || cellG == null) return null;
+            return new RgbGroup(cellR, cellG, cellB, offsetR, offsetG, offsetB);
+        }
+
+        private static RgbGroup? TryFindRgbGroup(List<PARAM.Cell> cells, int ci)        {
+            var cellR = cells[ci];
+            string nameR = cellR.Def.InternalName;
+
+            // Patterns supported:
+            // colR_X / colG_X / colB_X  (e.g. colR_0, colR_u, colR_s)
+            // *R / *G / *B suffix        (e.g. envDif_colR, someR)
+            // *_R / *_G / *_B            (e.g. col_R)
+
+            string? prefixG = null, prefixB = null;
+
+            // colR_X pattern: prefix = "col", suffix = "_X"
+            if (nameR.Length > 4 &&
+                nameR.StartsWith("col", StringComparison.OrdinalIgnoreCase) &&
+                nameR[3] == 'R')
+            {
+                string suffix = nameR[4..]; // e.g. "_0", "_u", ""
+                prefixG = "col" + "G" + suffix;
+                prefixB = "col" + "B" + suffix;
+            }
+            // *R_X or *R suffix
+            else if (nameR.EndsWith("R", StringComparison.OrdinalIgnoreCase) && nameR.Length > 1)
+            {
+                string stem = nameR[..^1];
+                prefixG = stem + "G";
+                prefixB = stem + "B";
+            }
+            else
+                return null;
+
+            // Find G and B cells by name
+            PARAM.Cell? cellG = null, cellB = null;
+            int offsetR = 0, offsetG = 0, offsetB = 0;
+
+            int off = 0;
+            foreach (var c in cells)
+            {
+                if (c == cellR) offsetR = off;
+                if (c.Def.InternalName.Equals(prefixG, StringComparison.OrdinalIgnoreCase))
+                { cellG = c; offsetG = off; }
+                if (c.Def.InternalName.Equals(prefixB, StringComparison.OrdinalIgnoreCase))
+                { cellB = c; offsetB = off; }
+                off += FieldSize(c.Def.DisplayType, c.Def.ArrayLength);
+            }
+
+            if (cellG == null || cellB == null) return null;
+            return new RgbGroup(cellR, cellG, cellB, offsetR, offsetG, offsetB);
+        }
+
+        private void DrawColorField(GameProcess process, nint baseAddr, PARAM.Row row,
+            byte[]? rowBytes, RgbGroup rgb, string paramName)
+        {
+            // For s16 fields: values are 0-255 range (or higher for HDR)
+            // Normalize to 0..1 for ColorEdit, but use HDR mode if values can exceed 255
+            float ToFloat(PARAM.Cell cell, int offset)
+            {
+                double raw = ReadFromCache(rowBytes, offset, cell);
+                return cell.Def.DisplayType switch
+                {
+                    PARAMDEF.DefType.f32 or PARAMDEF.DefType.angle32 => (float)raw,
+                    _ => (float)(raw / 255.0)
+                };
+            }
+
+            double FromFloat(PARAM.Cell cell, float v) => cell.Def.DisplayType switch
+            {
+                PARAMDEF.DefType.f32 or PARAMDEF.DefType.angle32 => v,
+                _ => Math.Round(v * 255.0)
+            };
+
+            var col = new Vector3(
+                ToFloat(rgb.cellR, rgb.offsetR),
+                ToFloat(rgb.cellG, rgb.offsetG),
+                ToFloat(rgb.cellB, rgb.offsetB));
+
+            // Strip R suffix for label
+            string nameR = rgb.cellR.Def.InternalName;
+            string label = nameR.StartsWith("col", StringComparison.OrdinalIgnoreCase) && nameR.Length > 3 && nameR[3] == 'R'
+                ? "col" + nameR[4..] // colR_0 → col_0
+                : nameR[..^1];       // someR → some
+
+            ImGui.SetNextItemWidth(300f);
+            // Use HDR flag to allow values > 1.0 (which maps to > 255)
+            if (ImGui.ColorEdit3($"{label} (RGB)##color_{row.ID}_{paramName}",
+                ref col, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR))
+            {
+                void WriteColor(PARAM.Cell cell, int offset, float v)
+                {
+                    double dv = FromFloat(cell, v);
+                    nint addr = baseAddr + (nint)row.DataOffset + offset;
+                    process.WriteField(addr, cell.Def.DisplayType, dv);
+                    WriteToCache(rowBytes, offset, cell.Def.DisplayType, dv);
+                    try { cell.Value = Convert.ChangeType(dv, cell.Value?.GetType() ?? typeof(double)); } catch { }
+                }
+                WriteColor(rgb.cellR, rgb.offsetR, col.X);
+                WriteColor(rgb.cellG, rgb.offsetG, col.Y);
+                WriteColor(rgb.cellB, rgb.offsetB, col.Z);
+            }
+        }
 
         private static (int mn, int mx) ClampedRange(PARAM.Cell cell, int typeMin, int typeMax)
         {

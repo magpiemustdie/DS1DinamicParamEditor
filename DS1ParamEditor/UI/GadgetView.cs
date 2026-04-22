@@ -383,7 +383,7 @@ namespace DS1ParamEditor
                 ImGui.SameLine();
 
                 bool canGetItem = _selectedItemIndex >= 0 && _selectedItemIndex < items.Length;
-                if (ImGui.Button("Get Item", new Vector2(-1, 0)) && canGetItem)
+                if (ImGui.Button("Get Item##btn", new Vector2(-1, 0)) && canGetItem)
                 {
                     var item = items[_selectedItemIndex];
                     player.GetItem(categoryId, item.Id, _itemQuantity);

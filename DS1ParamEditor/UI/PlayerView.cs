@@ -59,17 +59,21 @@ namespace DS1ParamEditor
             {
                 float fw = ImGui.GetContentRegionAvail().X * 0.5f - 4;
 
-                ImGui.SetNextItemWidth(fw);
-                ImGui.InputFloat("X##px", ref x, 0, 0, "%.2f", ImGuiInputTextFlags.ReadOnly);
+                ImGui.Text("X"); ImGui.SameLine();
+                ImGui.SetNextItemWidth(fw - ImGui.CalcTextSize("X").X - ImGui.GetStyle().ItemSpacing.X);
+                ImGui.InputFloat("##px", ref x, 0, 0, "%.2f", ImGuiInputTextFlags.ReadOnly);
                 ImGui.SameLine();
-                ImGui.SetNextItemWidth(fw);
-                ImGui.InputFloat("Y##py", ref y, 0, 0, "%.2f", ImGuiInputTextFlags.ReadOnly);
+                ImGui.Text("Y"); ImGui.SameLine();
+                ImGui.SetNextItemWidth(-1);
+                ImGui.InputFloat("##py", ref y, 0, 0, "%.2f", ImGuiInputTextFlags.ReadOnly);
 
-                ImGui.SetNextItemWidth(fw);
-                ImGui.InputFloat("Z##pz", ref z, 0, 0, "%.2f", ImGuiInputTextFlags.ReadOnly);
+                ImGui.Text("Z"); ImGui.SameLine();
+                ImGui.SetNextItemWidth(fw - ImGui.CalcTextSize("Z").X - ImGui.GetStyle().ItemSpacing.X);
+                ImGui.InputFloat("##pz", ref z, 0, 0, "%.2f", ImGuiInputTextFlags.ReadOnly);
                 ImGui.SameLine();
-                ImGui.SetNextItemWidth(fw);
-                ImGui.InputFloat("A##pa", ref angle, 0, 0, "%.2f", ImGuiInputTextFlags.ReadOnly);
+                ImGui.Text("A"); ImGui.SameLine();
+                ImGui.SetNextItemWidth(-1);
+                ImGui.InputFloat("##pa", ref angle, 0, 0, "%.2f", ImGuiInputTextFlags.ReadOnly);
 
                 if (ImGui.Button("Copy Position##cpw", new Vector2(-1, 0)))
                 {
@@ -79,19 +83,26 @@ namespace DS1ParamEditor
 
             // ── Pos warp ──────────────────────────────────────────────────────
             ImGui.SeparatorText("Position Warp");
-            float fw2 = ImGui.GetContentRegionAvail().X * 0.5f - 4;
+            {
+                float fw2 = ImGui.GetContentRegionAvail().X * 0.5f - 4;
+                float lw  = ImGui.CalcTextSize("X").X + ImGui.GetStyle().ItemSpacing.X;
 
-            ImGui.SetNextItemWidth(fw2);
-            ImGui.InputFloat("X##wx", ref _warpX, 0, 0, "%.2f");
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(fw2);
-            ImGui.InputFloat("Y##wy", ref _warpY, 0, 0, "%.2f");
+                ImGui.Text("X"); ImGui.SameLine();
+                ImGui.SetNextItemWidth(fw2 - lw);
+                ImGui.InputFloat("##wx", ref _warpX, 0, 0, "%.2f");
+                ImGui.SameLine();
+                ImGui.Text("Y"); ImGui.SameLine();
+                ImGui.SetNextItemWidth(-1);
+                ImGui.InputFloat("##wy", ref _warpY, 0, 0, "%.2f");
 
-            ImGui.SetNextItemWidth(fw2);
-            ImGui.InputFloat("Z##wz", ref _warpZ, 0, 0, "%.2f");
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(fw2);
-            ImGui.InputFloat("A##wa", ref _warpAngle, 0, 0, "%.2f");
+                ImGui.Text("Z"); ImGui.SameLine();
+                ImGui.SetNextItemWidth(fw2 - lw);
+                ImGui.InputFloat("##wz", ref _warpZ, 0, 0, "%.2f");
+                ImGui.SameLine();
+                ImGui.Text("A"); ImGui.SameLine();
+                ImGui.SetNextItemWidth(-1);
+                ImGui.InputFloat("##wa", ref _warpAngle, 0, 0, "%.2f");
+            }
 
             if (ImGui.Button("Warp to Position##do", new Vector2(-1, 0)))
             {
@@ -109,7 +120,9 @@ namespace DS1ParamEditor
             if (current != -1)
             {
                 string curName = FindBonfireName(current);
+                ImGui.PushTextWrapPos(0f);
                 ImGui.TextDisabled($"Last bonfire: {curName} ({current})");
+                ImGui.PopTextWrapPos();
             }
 
             // Filter by area
@@ -163,7 +176,9 @@ namespace DS1ParamEditor
 
             // Diagnostics
             ImGui.Spacing();
+            ImGui.PushTextWrapPos(0f);
             ImGui.TextDisabled(player.GetBonfireDiagnostics());
+            ImGui.PopTextWrapPos();
         }
 
         private static string FindBonfireName(int id)

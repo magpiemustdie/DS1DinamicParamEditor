@@ -116,8 +116,11 @@ namespace DS1ParamEditor
             try
             {
                 string dir = UseDrawParams ? Config.SelectedDrawParamPath : Config.SelectedParamPath;
-                ParamFiles = _store.Load(Config.SelectedParamDefPath, dir);
-                SetStatus($"Loaded {ParamFiles.Count} param files.");
+                ParamFiles = _store.Load(Config.SelectedParamDefPath, dir, ScanPatternMode, CustomPatternLength, ForceLoadParams, ScanPatternStart);
+                int totalParams = ParamFiles.Sum(f => f.Params.Count);
+                int totalSkipped = ParamFiles.Sum(f => f.SkippedCount);
+                string skipMsg = totalSkipped > 0 ? $" ({totalSkipped} skipped — enable Force load or open console for details)" : "";
+                SetStatus($"Loaded {ParamFiles.Count} files, {totalParams} params.{skipMsg}");
             }
             catch (Exception ex)
             {
@@ -168,7 +171,7 @@ namespace DS1ParamEditor
 
             try
             {
-                var files = _store.Load(Config.SelectedParamDefPath, Config.SelectedParamPath);
+                var files = _store.Load(Config.SelectedParamDefPath, Config.SelectedParamPath, ScanPatternMode, CustomPatternLength, ForceLoadParams, ScanPatternStart);
                 foreach (var file in files)
                 {
                     var lp = file.Params.FirstOrDefault(
@@ -228,7 +231,7 @@ namespace DS1ParamEditor
             }
 
             _lockCamScanCts?.Cancel();
-            _lockCamScanCts = new CancellationTokenSource();
+            _lockCamScanCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var ct = _lockCamScanCts.Token;
 
             LockCamScanState = ScanState.Scanning;
@@ -279,6 +282,10 @@ namespace DS1ParamEditor
 
         // в”Ђв”Ђ Auto-load params on warp в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         public bool AutoLoadParamsOnWarp { get; set; } = false;
+        public LoadedParam.PatternMode  ScanPatternMode  { get; set; } = LoadedParam.PatternMode.Auto;
+        public LoadedParam.PatternStart ScanPatternStart { get; set; } = LoadedParam.PatternStart.FromFileStart;
+        public int  CustomPatternLength { get; set; } = 96;
+        public bool ForceLoadParams { get; set; } = false;
 
         // Remembers the anchor address for each map prefix across warps
         // Key: map prefix like "m10", "m15" вЂ” Value: last known anchor address
@@ -295,7 +302,7 @@ namespace DS1ParamEditor
             try
             {
                 string dir = Config.SelectedDrawParamPath;
-                var files = _store.Load(Config.SelectedParamDefPath, dir);
+                var files = _store.Load(Config.SelectedParamDefPath, dir, ScanPatternMode, CustomPatternLength, ForceLoadParams, ScanPatternStart);
 
                 string[] prefixes = GetDrawParamPrefixes(mapName);
 
@@ -488,7 +495,7 @@ namespace DS1ParamEditor
 
             // Cancel any previous scan still running
             _scanCts?.Cancel();
-            _scanCts = new CancellationTokenSource();
+            _scanCts = new CancellationTokenSource(TimeSpan.FromSeconds(30)); // 30s timeout
             var ct = _scanCts.Token;
 
             ScanState = ScanState.Scanning;
@@ -519,7 +526,9 @@ namespace DS1ParamEditor
                 catch (OperationCanceledException)
                 {
                     ScanState = ScanState.Idle;
-                    SetStatus("Scan cancelled.");
+                    SetStatus(ct.IsCancellationRequested && !ct.CanBeCanceled
+                        ? $"Scan timed out for '{param.Name}' (30s). Pattern may not match memory."
+                        : "Scan cancelled.");
                 }
                 catch (Exception ex)
                 {
@@ -598,6 +607,18 @@ namespace DS1ParamEditor
                 if (lockCamAddr != default)
                     _hookedAddresses["LockCamParam"] = lockCamAddr;
             }
+
+            // Also clear ParamHook cache (except LockCamParam) so re-hook does a fresh scan
+            if (_paramHook != null)
+            {
+                var cached = _paramHook.GetCachedParams();
+                foreach (var name in cached)
+                {
+                    if (name != "LockCamParam")
+                        _paramHook.RemoveFromCache(name);
+                }
+            }
+
             ScanState = ScanState.Idle;
         }
 

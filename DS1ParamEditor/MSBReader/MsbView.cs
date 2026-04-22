@@ -83,6 +83,51 @@ namespace DS1ParamEditor
             }
         }
 
+        /// <summary>Left panel: file picker only.</summary>
+        public void DrawLeft()
+        {
+            if (!_state.Config.IsReady)
+            {
+                ImGui.TextDisabled("Select game exe first.");
+                return;
+            }
+            DrawFilesTab();
+        }
+
+        /// <summary>Right panel: Parts / Regions / Events tabs.</summary>
+        public bool HasContent => _loaded != null;
+
+        public void DrawRight()
+        {
+            if (_loaded == null)
+            {
+                ImGui.TextDisabled("Load an MSB file from the MSB tab.");
+                return;
+            }
+
+            ImGui.SeparatorText(_loaded.FileName);
+
+            if (ImGui.BeginTabBar("MsbContentTabs"))
+            {
+                if (ImGui.BeginTabItem("Parts"))
+                {
+                    DrawPartsTab();
+                    ImGui.EndTabItem();
+                }
+                if (ImGui.BeginTabItem("Regions"))
+                {
+                    DrawRegionsTab();
+                    ImGui.EndTabItem();
+                }
+                if (ImGui.BeginTabItem("Events"))
+                {
+                    DrawEventsTab();
+                    ImGui.EndTabItem();
+                }
+                ImGui.EndTabBar();
+            }
+        }
+
         // ── Files tab ─────────────────────────────────────────────────────────
 
         private void DrawFilesTab()
@@ -193,11 +238,11 @@ namespace DS1ParamEditor
             float w = ImGui.GetContentRegionAvail().X;
 
             // ── Common fields ─────────────────────────────────────────────────
-            ImGui.SetNextItemWidth(w);
-            if (ImGui.InputText("Name##pname", ref _editName, 128)) _editDirty = true;
+            ImGui.Text("Name"); ImGui.SetNextItemWidth(w);
+            if (ImGui.InputText("##pname", ref _editName, 128)) _editDirty = true;
 
-            ImGui.SetNextItemWidth(w);
-            if (ImGui.InputText("Model##pmodel", ref _editModel, 64)) _editDirty = true;
+            ImGui.Text("Model"); ImGui.SetNextItemWidth(w);
+            if (ImGui.InputText("##pmodel", ref _editModel, 64)) _editDirty = true;
 
             ImGui.Text("Position");
             ImGui.SetNextItemWidth(w);
@@ -243,7 +288,7 @@ namespace DS1ParamEditor
             ImGui.SeparatorText("Entity");
             ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
             int entityId = mp.EntityID;
-            if (ImGui.InputInt("EntityID##mpeid", ref entityId)) { mp.EntityID = entityId; _editDirty = true; }
+            if (ImGui.InputInt("##mpeid", ref entityId)) { mp.EntityID = entityId; _editDirty = true; }
         }
 
         private void DrawPartBankIds(MSB1.Part part)
@@ -251,47 +296,18 @@ namespace DS1ParamEditor
             ImGui.Spacing();
             ImGui.SeparatorText("DrawParam Banks");
 
-            float hw = (ImGui.GetContentRegionAvail().X - 8) * 0.5f;
-
-            ImGui.SetNextItemWidth(hw);
-            int lightId = part.LightID;
-            if (ImGui.InputInt("Light##light", ref lightId)) { part.LightID = (byte)lightId; _editDirty = true; }
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(hw);
-            int fogId = part.FogID;
-            if (ImGui.InputInt("Fog##fog", ref fogId)) { part.FogID = (byte)fogId; _editDirty = true; }
-
-            ImGui.SetNextItemWidth(hw);
-            int scatterId = part.ScatterID;
-            if (ImGui.InputInt("Scatter##scatter", ref scatterId)) { part.ScatterID = (byte)scatterId; _editDirty = true; }
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(hw);
-            int lensFlareId = part.LensFlareID;
-            if (ImGui.InputInt("LensFlare##lf", ref lensFlareId)) { part.LensFlareID = (byte)lensFlareId; _editDirty = true; }
-
-            ImGui.SetNextItemWidth(hw);
-            int shadowId = part.ShadowID;
-            if (ImGui.InputInt("Shadow##shadow", ref shadowId)) { part.ShadowID = (byte)shadowId; _editDirty = true; }
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(hw);
-            int dofId = part.DofID;
-            if (ImGui.InputInt("Dof##dof", ref dofId)) { part.DofID = (byte)dofId; _editDirty = true; }
-
-            ImGui.SetNextItemWidth(hw);
-            int toneMapId = part.ToneMapID;
-            if (ImGui.InputInt("ToneMap##tm", ref toneMapId)) { part.ToneMapID = (byte)toneMapId; _editDirty = true; }
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(hw);
-            int toneCorrectId = part.ToneCorrectID;
-            if (ImGui.InputInt("ToneCorrect##tc", ref toneCorrectId)) { part.ToneCorrectID = (byte)toneCorrectId; _editDirty = true; }
-
-            ImGui.SetNextItemWidth(hw);
-            int lanternId = part.LanternID;
-            if (ImGui.InputInt("Lantern##lantern", ref lanternId)) { part.LanternID = (byte)lanternId; _editDirty = true; }
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(hw);
-            int lodParamId = part.LodParamID;
-            if (ImGui.InputInt("LodParam##lod", ref lodParamId)) { part.LodParamID = (byte)lodParamId; _editDirty = true; }
+            const float FIELD_W = 80f;
+            int v;
+            v = part.LightID;       ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##light",   ref v, 0, 0)) { part.LightID      = (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("Light");
+            v = part.FogID;         ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##fog",     ref v, 0, 0)) { part.FogID        = (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("Fog");
+            v = part.ScatterID;     ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##scatter", ref v, 0, 0)) { part.ScatterID    = (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("Scatter");
+            v = part.LensFlareID;   ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##lf",      ref v, 0, 0)) { part.LensFlareID  = (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("LensFlare");
+            v = part.ShadowID;      ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##shadow",  ref v, 0, 0)) { part.ShadowID     = (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("Shadow");
+            v = part.DofID;         ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##dof",     ref v, 0, 0)) { part.DofID        = (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("Dof");
+            v = part.ToneMapID;     ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##tm",      ref v, 0, 0)) { part.ToneMapID    = (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("ToneMap");
+            v = part.ToneCorrectID; ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##tc",      ref v, 0, 0)) { part.ToneCorrectID= (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("ToneCorrect");
+            v = part.LanternID;     ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##lantern", ref v, 0, 0)) { part.LanternID    = (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("Lantern");
+            v = part.LodParamID;    ImGui.SetNextItemWidth(FIELD_W); if (ImGui.InputInt("##lod",     ref v, 0, 0)) { part.LodParamID   = (byte)Math.Clamp(v,0,255); _editDirty=true; } ImGui.SameLine(); ImGui.Text("LodParam");
         }
 
         private void DrawCollisionFields(MSB1.Part.Collision col)
@@ -300,36 +316,34 @@ namespace DS1ParamEditor
             ImGui.SeparatorText("Collision");
 
             float w = ImGui.GetContentRegionAvail().X;
-            float hw = (w - 8) * 0.5f;
 
-            ImGui.SetNextItemWidth(hw);
+            ImGui.Text("HitFilter"); ImGui.SetNextItemWidth(w);
             int hitFilterId = col.HitFilterID;
-            if (ImGui.InputInt("HitFilter##colhf", ref hitFilterId)) { col.HitFilterID = (byte)hitFilterId; _editDirty = true; }
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(hw);
+            if (ImGui.InputInt("##colhf", ref hitFilterId)) { col.HitFilterID = (byte)hitFilterId; _editDirty = true; }
+
+            ImGui.Text("SoundSpace"); ImGui.SetNextItemWidth(w);
             int soundSpaceType = col.SoundSpaceType;
-            if (ImGui.InputInt("SoundSpace##colss", ref soundSpaceType)) { col.SoundSpaceType = (byte)soundSpaceType; _editDirty = true; }
+            if (ImGui.InputInt("##colss", ref soundSpaceType)) { col.SoundSpaceType = (byte)soundSpaceType; _editDirty = true; }
 
-            ImGui.SetNextItemWidth(hw);
+            ImGui.Text("ReflectPlane"); ImGui.SetNextItemWidth(w);
             float reflectPlane = col.ReflectPlaneHeight;
-            if (ImGui.InputFloat("ReflectPlane##colrp", ref reflectPlane)) { col.ReflectPlaneHeight = reflectPlane; _editDirty = true; }
-            ImGui.SameLine();
-            ImGui.SetNextItemWidth(hw);
+            if (ImGui.InputFloat("##colrp", ref reflectPlane)) { col.ReflectPlaneHeight = reflectPlane; _editDirty = true; }
+
+            ImGui.Text("EnvLightMapSpot"); ImGui.SetNextItemWidth(w);
             int envLightMapSpot = col.EnvLightMapSpotIndex;
-            if (ImGui.InputInt("EnvLightMapSpot##colel", ref envLightMapSpot)) { col.EnvLightMapSpotIndex = (short)envLightMapSpot; _editDirty = true; }
+            if (ImGui.InputInt("##colel", ref envLightMapSpot)) { col.EnvLightMapSpotIndex = (short)envLightMapSpot; _editDirty = true; }
 
-            ImGui.SetNextItemWidth(hw);
+            ImGui.Text("MapNameID"); ImGui.SetNextItemWidth(w);
             int mapNameId = col.MapNameID;
-            if (ImGui.InputInt("MapNameID##colmn", ref mapNameId)) { col.MapNameID = (short)mapNameId; _editDirty = true; }
+            if (ImGui.InputInt("##colmn", ref mapNameId)) { col.MapNameID = (short)mapNameId; _editDirty = true; }
 
-            // DrawParam banks also apply to collision
             DrawPartBankIds(col);
 
             ImGui.Spacing();
             ImGui.SeparatorText("Entity");
             ImGui.SetNextItemWidth(w);
             int entityId = col.EntityID;
-            if (ImGui.InputInt("EntityID##coleid", ref entityId)) { col.EntityID = entityId; _editDirty = true; }
+            if (ImGui.InputInt("##coleid", ref entityId)) { col.EntityID = entityId; _editDirty = true; }
         }
 
         // ── Regions tab ───────────────────────────────────────────────────────

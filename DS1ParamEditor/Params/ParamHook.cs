@@ -271,6 +271,7 @@ namespace DS1ParamEditor
 
                     while (chunkStart.ToInt64() < regionEnd.ToInt64())
                     {
+                        if (ct.IsCancellationRequested) return nint.Zero;
                         try
                         {
                             int chunkSize = (int)Math.Min(CHUNK_SIZE, regionEnd.ToInt64() - chunkStart.ToInt64());
@@ -285,6 +286,10 @@ namespace DS1ParamEditor
                                 {
                                     for (int i = 0; i <= bytesRead - patternLength; i++)
                                     {
+                                        // Check cancellation every 64KB worth of iterations
+                                        if ((i & 0xFFFF) == 0 && ct.IsCancellationRequested)
+                                            return nint.Zero;
+
                                         bool found = true;
                                         for (int j = 0; j < patternLength; j++)
                                         {
