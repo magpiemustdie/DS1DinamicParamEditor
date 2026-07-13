@@ -21,18 +21,9 @@ jobs:
           repository: soulsmods/SoulsFormatsNEXT
           path: SoulsFormatsNEXT
 
-      - name: Checkout PropertyHook
-        uses: actions/checkout@v4
-        with:
-          repository: JKAnderson/PropertyHook
-          path: PropertyHook
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0
-
-      - name: Build PropertyHook
-        run: dotnet build PropertyHook/PropertyHook/PropertyHook.csproj -c Release -p:TargetFrameworks=netstandard2.0
 
       - name: Build SoulsFormatsNEXT
         run: dotnet build SoulsFormatsNEXT/SoulsFormats/SoulsFormats.csproj -c Release

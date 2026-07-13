@@ -41,7 +41,7 @@
 
 	<ItemGroup>
       <Reference Include="PropertyHook">
-        <HintPath>..\..\PropertyHook\PropertyHook\bin\Release\netstandard2.0\PropertyHook.dll</HintPath>
+        <HintPath>..\lib\PropertyHook.dll</HintPath>
       </Reference>
 	</ItemGroup>
 
