@@ -40,9 +40,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Reference Include="PropertyHook">
-	    <HintPath>..\..\PropertyHook\PropertyHook\bin\Release\net48\PropertyHook.dll</HintPath>
-	  </Reference>
+      <Reference Include="PropertyHook">
+        <HintPath>..\..\PropertyHook\PropertyHook\bin\Release\netstandard2.0\PropertyHook.dll</HintPath>
+      </Reference>
 	</ItemGroup>
 
 </Project>
