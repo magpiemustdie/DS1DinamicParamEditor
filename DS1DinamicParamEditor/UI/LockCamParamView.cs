@@ -31,6 +31,8 @@ namespace DS1ParamEditor
 
         public LockCamParamView(EditorState state) => _state = state;
 
+        public void Reset() { _selectedRowIndex = 0; _cache = null; }
+
         public void Draw()
         {
             var param = _state.LockCamParam;
@@ -88,7 +90,7 @@ namespace DS1ParamEditor
             }
             if (_cache == null || _cache.Length < ROW_BYTES) return;
 
-            byte[] b = (byte[])_cache.Clone();
+            byte[] b = _cache;
             float w = ImGui.GetContentRegionAvail().X * 0.6f;
 
             if (ImGui.CollapsingHeader("Camera", ImGuiTreeNodeFlags.DefaultOpen))
@@ -104,8 +106,6 @@ namespace DS1ParamEditor
             {
                 Field(process, param, row, rowAddr, b, OFF_LOCK_RANGE_MAX, "Max range (m)",       "chrLockRangeMaxRadius", 0f, 60f, w);
             }
-
-            Buffer.BlockCopy(b, 0, _cache, 0, ROW_BYTES);
         }
 
         // ── Slider ────────────────────────────────────────────────────────────

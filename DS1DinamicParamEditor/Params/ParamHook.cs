@@ -1,6 +1,8 @@
 using PropertyHook;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using SoulsFormats;
@@ -34,11 +36,21 @@ namespace DS1ParamEditor
         private int _cachedReads;
         private int _directReads;
 
-        public ParamHook(int refreshInterval, int minLifetime) :
-            base(refreshInterval, minLifetime, p => p.MainWindowTitle == "DARK SOULS™: REMASTERED")
+        public ParamHook(int refreshInterval, int minLifetime, string? exePath = null) :
+            base(refreshInterval, minLifetime, p => MatchesExe(p, exePath))
         {
             OnHooked += ParamHook_OnHooked;
             OnUnhooked += ParamHook_OnUnhooked;
+        }
+
+        private static bool MatchesExe(Process p, string? exePath)
+        {
+            if (string.IsNullOrEmpty(exePath)) return false;
+            try
+            {
+                return string.Equals(p.MainModule.FileName, exePath, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
         }
 
         private void ParamHook_OnHooked(object sender, PHEventArgs e)
@@ -102,7 +114,7 @@ namespace DS1ParamEditor
             {
                 if (_cachedAddresses.TryGetValue(paramName, out nint addr))
                 {
-                    _cachedReads++;
+                    Interlocked.Increment(ref _cachedReads);
                     return addr;
                 }
                 return null;
@@ -140,6 +152,36 @@ namespace DS1ParamEditor
 
         // ── Scanning ──────────────────────────────────────────────────────────
 
+        /// <summary>Builds Boyer-Moore-Horspool skip table for a pattern/mask pair.</summary>
+        private static int[] BuildBmhSkipTable(byte[] pattern, string mask)
+        {
+            int len = pattern.Length;
+            int[] skip = new int[256];
+
+            // Default: slide pattern past current position
+            for (int c = 0; c < 256; c++)
+                skip[c] = len;
+
+            if (len == 0) return skip;
+
+            // If last byte is wildcard, BMH can't use it — fall back to shift=1
+            if (mask[len - 1] == '?')
+            {
+                for (int c = 0; c < 256; c++)
+                    skip[c] = 1;
+                return skip;
+            }
+
+            // For each byte in pattern[0..len-2], record distance from end
+            for (int i = 0; i < len - 1; i++)
+            {
+                if (mask[i] != '?')
+                    skip[pattern[i]] = len - 1 - i;
+            }
+
+            return skip;
+        }
+
         /// <summary>
         /// Scans for a param pattern and caches the result.
         /// Returns the base address (pattern address - offset).
@@ -149,7 +191,7 @@ namespace DS1ParamEditor
             if (!Hooked || pattern == null || pattern.Length == 0)
                 return nint.Zero;
 
-            _totalScans++;
+            _totalScans = Interlocked.Increment(ref _totalScans);
 
             // Check cache first
             var cached = GetCachedAddress(paramName);
@@ -168,7 +210,7 @@ namespace DS1ParamEditor
                 {
                     nint baseAddr = hit - (nint)offset;
                     CacheAddress(paramName, baseAddr);
-                    _successfulScans++;
+                    Interlocked.Increment(ref _successfulScans);
                     return baseAddr;
                 }
                 else
@@ -184,10 +226,7 @@ namespace DS1ParamEditor
             }
         }
 
-        /// <summary>
-        /// Scans for a param pattern within a specific memory range.
-        /// Much faster than full scan when approximate location is known.
-        /// </summary>
+        /// <summary>Scans for a param pattern within a specific memory range.</summary>
         public nint ScanInRange(string paramName, byte[] pattern, long offset,
             nint rangeStart, nint rangeEnd, CancellationToken ct = default)
         {
@@ -199,65 +238,82 @@ namespace DS1ParamEditor
             const int CHUNK_SIZE = 0x10000;
             int patternLength = pattern.Length;
             string mask = new string('x', patternLength);
+            var skip = BuildBmhSkipTable(pattern, mask);
+            int lastIdx = patternLength - 1;
 
             nint current = rangeStart;
             while (current.ToInt64() < rangeEnd.ToInt64())
             {
                 if (ct.IsCancellationRequested) return nint.Zero;
+
+                int chunkSize = (int)Math.Min(CHUNK_SIZE, rangeEnd.ToInt64() - current.ToInt64());
+                byte[] buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
                 try
                 {
-                    int chunkSize = (int)Math.Min(CHUNK_SIZE, rangeEnd.ToInt64() - current.ToInt64());
-                    byte[] buffer = new byte[chunkSize];
                     if (ReadProcessMemory(Handle, current, buffer, chunkSize, out int bytesRead) && bytesRead >= patternLength)
                     {
-                        for (int i = 0; i <= bytesRead - patternLength; i++)
+                        int searchLen = bytesRead - patternLength;
+                        int i = 0;
+                        while (i <= searchLen)
                         {
-                            bool found = true;
-                            for (int j = 0; j < patternLength; j++)
+                            int bufPos = i + lastIdx;
+                            byte lastByte = buffer[bufPos];
+
+                            if (mask[lastIdx] == '?' || pattern[lastIdx] == lastByte)
                             {
-                                if (pattern[j] != buffer[i + j]) { found = false; break; }
+                                bool found = true;
+                                for (int j = 0; j < lastIdx; j++)
+                                {
+                                    if (mask[j] != '?' && pattern[j] != buffer[i + j])
+                                    { found = false; break; }
+                                }
+                                if (found)
+                                {
+                                    nint baseAddr = (nint)(current.ToInt64() + i) - (nint)offset;
+                                    CacheAddress(paramName, baseAddr);
+                                    return baseAddr;
+                                }
                             }
-                            if (found)
-                            {
-                                nint baseAddr = (nint)(current.ToInt64() + i) - (nint)offset;
-                                CacheAddress(paramName, baseAddr);
-                                return baseAddr;
-                            }
+
+                            i += skip[lastByte];
                         }
                     }
                 }
                 catch { }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(buffer);
+                }
                 current = (nint)(current.ToInt64() + CHUNK_SIZE);
             }
             return nint.Zero;
         }
-        /// Based on original AOBScanner implementation.
-        /// </summary>
+        /// <summary>BMH-accelerated scanner. Based on original AOBScanner.</summary>
         private nint ScanMemory(byte[] pattern, string? mask, CancellationToken ct)
         {
-            const int CHUNK_SIZE = 0x10000; // 64KB chunks
+            const int CHUNK_SIZE = 0x10000;
             int patternLength = pattern.Length;
 
-            // Create mask if not provided
             if (mask == null)
                 mask = new string('x', patternLength);
             else if (mask.Length != patternLength)
                 throw new ArgumentException($"Pattern and mask lengths must match ({patternLength} vs {mask.Length})");
 
+            var skip = BuildBmhSkipTable(pattern, mask);
+            int lastIdx = patternLength - 1;
+
             IntPtr currentAddress = IntPtr.Zero;
             Kernel32.MEMORY_BASIC_INFORMATION memInfo;
-            int mbiSize = System.Runtime.InteropServices.Marshal.SizeOf<Kernel32.MEMORY_BASIC_INFORMATION>();
+            int mbiSize = Marshal.SizeOf<Kernel32.MEMORY_BASIC_INFORMATION>();
 
             while (Kernel32.VirtualQueryEx(Handle, currentAddress, out memInfo, (IntPtr)mbiSize) != 0)
             {
                 if (ct.IsCancellationRequested)
                     return nint.Zero;
 
-                // Skip if at invalid memory or would overflow
                 if (currentAddress.ToInt64() >= (long)(nint.MaxValue - (int)memInfo.RegionSize))
                     break;
 
-                // Only scan PAGE_READWRITE committed memory (same as original AOBScanner)
                 const uint PAGE_READWRITE = 0x04;
                 const uint MEM_COMMIT = 0x1000;
                 const uint PAGE_NOACCESS = 0x01;
@@ -272,46 +328,49 @@ namespace DS1ParamEditor
                     while (chunkStart.ToInt64() < regionEnd.ToInt64())
                     {
                         if (ct.IsCancellationRequested) return nint.Zero;
+
+                        int chunkSize = (int)Math.Min(CHUNK_SIZE, regionEnd.ToInt64() - chunkStart.ToInt64());
+                        byte[] buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
                         try
                         {
-                            int chunkSize = (int)Math.Min(CHUNK_SIZE, regionEnd.ToInt64() - chunkStart.ToInt64());
-                            byte[] buffer = new byte[chunkSize];
-                            int bytesRead;
-
-                            // Use custom ReadProcessMemory with out parameter (same as original AOBScanner)
-                            if (ReadProcessMemory(Handle, chunkStart, buffer, chunkSize, out bytesRead))
+                            if (ReadProcessMemory(Handle, chunkStart, buffer, chunkSize, out int bytesRead) && bytesRead >= patternLength)
                             {
-                                // Only scan if we got enough data (use actual bytes read, not requested)
-                                if (bytesRead >= patternLength)
+                                int searchLen = bytesRead - patternLength;
+                                int i = 0;
+                                while (i <= searchLen)
                                 {
-                                    for (int i = 0; i <= bytesRead - patternLength; i++)
-                                    {
-                                        // Check cancellation every 64KB worth of iterations
-                                        if ((i & 0xFFFF) == 0 && ct.IsCancellationRequested)
-                                            return nint.Zero;
+                                    if ((i & 0xFFFF) == 0 && ct.IsCancellationRequested)
+                                        return nint.Zero;
 
+                                    int bufPos = i + lastIdx;
+                                    byte lastByte = buffer[bufPos];
+
+                                    if (mask[lastIdx] == '?' || pattern[lastIdx] == lastByte)
+                                    {
                                         bool found = true;
-                                        for (int j = 0; j < patternLength; j++)
+                                        for (int j = 0; j < lastIdx; j++)
                                         {
                                             if (mask[j] != '?' && pattern[j] != buffer[i + j])
-                                            {
-                                                found = false;
-                                                break;
-                                            }
+                                            { found = false; break; }
                                         }
                                         if (found)
                                             return (nint)IntPtr.Add(chunkStart, i);
                                     }
+
+                                    i += skip[lastByte];
                                 }
                             }
                         }
-                        catch { /* Skip inaccessible chunks */ }
+                        catch { }
+                        finally
+                        {
+                            ArrayPool<byte>.Shared.Return(buffer);
+                        }
 
                         chunkStart = IntPtr.Add(chunkStart, CHUNK_SIZE);
                     }
                 }
 
-                // Move to next memory region
                 IntPtr nextAddress = IntPtr.Add(memInfo.BaseAddress, (int)memInfo.RegionSize);
                 if (nextAddress.ToInt64() <= currentAddress.ToInt64())
                     break;
@@ -334,7 +393,7 @@ namespace DS1ParamEditor
             }
 
             nint addr = baseAddr.Value + (nint)rowOffset + (nint)fieldOffset;
-            _directReads++;
+            Interlocked.Increment(ref _directReads);
 
             return type switch
             {

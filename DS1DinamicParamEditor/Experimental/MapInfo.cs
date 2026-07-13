@@ -18,7 +18,7 @@ namespace DS1ParamEditor.Experimental
     /// </summary>
     public sealed class MapInfo
     {
-        private readonly PlayerHook _hook;
+        private readonly IGadgetHook _hook;
 
         public byte Area   { get; private set; }
         public byte Block  { get; private set; }
@@ -33,7 +33,7 @@ namespace DS1ParamEditor.Experimental
         /// <summary>Human-readable area name if known.</summary>
         public string AreaName => IsValid ? LookupAreaName(Area, Block) : "Unknown";
 
-        public MapInfo(PlayerHook hook)
+        public MapInfo(IGadgetHook hook)
         {
             _hook = hook;
         }

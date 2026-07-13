@@ -24,6 +24,19 @@ namespace DS1ParamEditor
             _state = state;
         }
 
+        public void Reset()
+        {
+            _shadowDir?.Stop();
+            _shadowDir = null;
+            _mapInfo = null;
+            _msbPath = string.Empty;
+            _triggerRadius = 20f;
+            _lerpSpeed = 720f;
+            _azimuthOffset = -50f;
+            _updateIntervalMs = 16;
+            _multiWritesPerYield = 100;
+        }
+
         public void Draw()
         {
             if (_mapInfo == null && _state.Player != null)

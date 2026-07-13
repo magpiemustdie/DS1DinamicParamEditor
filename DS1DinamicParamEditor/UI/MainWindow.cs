@@ -30,6 +30,9 @@ namespace DS1ParamEditor
         // Compact mode - hide right panel and shrink window
         private bool _compactMode = true;
 
+        // True only in the frame where user clicked a param on the left panel
+        private bool _paramSelectedThisFrame;
+
         public MainWindow()
         {
             _tableView        = new ParamTableView(_state);
@@ -40,12 +43,28 @@ namespace DS1ParamEditor
             _msbView          = new MsbView(_state);
         }
 
+        private void SelectExe()
+        {
+            _state.SelectExe();
+            ResetAllViews();
+        }
+
+        private void ResetAllViews()
+        {
+            _msbView.Reset();
+            _experimentalView.Reset();
+            _gadgetView.Reset();
+            _playerView.Reset();
+            _lockCamView.Reset();
+        }
+
         public void Draw()
         {
             DrawMenuBar();
             DrawStatusBar();
             ImGui.Separator();
             DrawBody();
+            _paramSelectedThisFrame = false;
         }
 
         // ── Menu bar ──────────────────────────────────────────────────────────
@@ -57,7 +76,7 @@ namespace DS1ParamEditor
             if (ImGui.BeginMenu("File"))
             {
                 if (ImGui.MenuItem("Select exe..."))
-                    _state.SelectExe();
+                    SelectExe();
 
                 if (ImGui.MenuItem("Save LockCamParam", _state.LockCamFile != null))
                     _state.SaveLockCamParam();
@@ -153,7 +172,7 @@ namespace DS1ParamEditor
                 ? "No exe selected" : _state.Config.SelectedExe);
 
             if (ImGui.Button("Select exe", new Vector2(-1, 0)))
-                _state.SelectExe();
+                SelectExe();
 
             // Connection status
             bool paramsAttached = _state.IsAttached;
@@ -307,7 +326,10 @@ namespace DS1ParamEditor
                     var  col    = hooked ? new Vector4(0.4f, 1f, 0.4f, 1f) : new Vector4(1f, 1f, 1f, 1f);
                     ImGui.PushStyleColor(ImGuiCol.Text, col);
                     if (ImGui.Selectable(hooked ? $"* {lp.Name}" : lp.Name, sel))
+                    {
                         _state.SelectParam(lp);
+                        _paramSelectedThisFrame = true;
+                    }
                     ImGui.PopStyleColor();
                 }
                 ImGui.EndChild();
@@ -402,30 +424,47 @@ namespace DS1ParamEditor
                 return;
             }
 
-            ImGui.BeginChild("MultiParamScroll", Vector2.Zero, ImGuiChildFlags.None,
-                ImGuiWindowFlags.HorizontalScrollbar);
-
-            foreach (var lp in file.Params)
+            ImGui.PushStyleColor(ImGuiCol.TabSelected, new Vector4(0.85f, 0.1f, 0.1f, 1f));
+            if (ImGui.BeginTabBar("ParamTabs", ImGuiTabBarFlags.FittingPolicyScroll))
             {
-                bool hooked = _state.HookedAddresses.ContainsKey(lp.Name);
-                var hdrCol = hooked ? new Vector4(0.4f, 1f, 0.4f, 1f) : new Vector4(0.8f, 0.8f, 0.8f, 1f);
-                string hdrLabel = (hooked ? "* " : "") + lp.Name + $"##ph_{lp.Name}";
+                foreach (var lp in file.Params)
+                {
+                    bool hooked = _state.HookedAddresses.ContainsKey(lp.Name);
+                    string label = lp.Name;
 
-                ImGui.PushStyleColor(ImGuiCol.Text, hdrCol);
-                bool open = ImGui.CollapsingHeader(hdrLabel);
+                    if (hooked)
+                    {
+                        ImGui.PushStyleColor(ImGuiCol.Tab, new Vector4(0.18f, 0.4f, 0.18f, 1f));
+                        ImGui.PushStyleColor(ImGuiCol.TabHovered, new Vector4(0.22f, 0.5f, 0.22f, 1f));
+                    }
+
+                    var flags = ImGuiTabItemFlags.None;
+                    if (_paramSelectedThisFrame && _state.SelectedParam == lp)
+                        flags = ImGuiTabItemFlags.SetSelected;
+
+                    bool tabOpen = true;
+                    if (ImGui.BeginTabItem(label + $"##tab_{lp.Name}", ref tabOpen, flags))
+                    {
+                        if (hooked) ImGui.PopStyleColor(2);
+
+                        // Sync left panel highlight when tab changes (unless left-click is already handling it this frame)
+                        if (!_paramSelectedThisFrame)
+                            _state.SelectParam(lp);
+
+                        DrawInlineHookControls(lp);
+                        ImGui.Separator();
+                        _tableView.DrawParam(lp);
+
+                        ImGui.EndTabItem();
+                    }
+                    else
+                    {
+                        if (hooked) ImGui.PopStyleColor(2);
+                    }
+                }
+                ImGui.EndTabBar();
                 ImGui.PopStyleColor();
-
-                if (!open) continue;
-
-                ImGui.Indent();
-                DrawInlineHookControls(lp);
-                ImGui.Separator();
-                _tableView.DrawParam(lp);
-                ImGui.Unindent();
-                ImGui.Spacing();
             }
-
-            ImGui.EndChild();
         }
 
         private void DrawInlineHookControls(LoadedParam param)
@@ -443,15 +482,16 @@ namespace DS1ParamEditor
                 ImGui.SameLine();
                 if (ImGui.SmallButton($"Re-hook##{param.Name}"))
                 {
-                    _state.SelectParam(param);
-                    _state.ClearHooks();
-                    _state.StartScan();
+                    _state.ClearHook(param.Name);
+                    var file = _state.SelectedFile;
+                    if (file != null)
+                        _state.StartScan(param, file);
                 }
                 ImGui.SameLine();
                 if (ImGui.SmallButton($"Save##{param.Name}"))
                     _state.SaveCurrentFile();
             }
-            else if (_state.ScanState == ScanState.Scanning && _state.SelectedParam == param)
+            else if (_state.ScanState == ScanState.Scanning && _state.ScanningParamName == param.Name)
             {
                 ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Scanning...");
                 ImGui.SameLine();
@@ -462,49 +502,12 @@ namespace DS1ParamEditor
             {
                 if (ImGui.SmallButton($"Hook##{param.Name}"))
                 {
-                    _state.SelectParam(param);
-                    _state.StartScan();
+                    var file = _state.SelectedFile;
+                    if (file != null)
+                        _state.StartScan(param, file);
                 }
                 ImGui.SameLine();
                 ImGui.TextDisabled($"{param.ScanPattern.Length}b [{modeLabel}] @ +0x{param.ScanOffset:X}");
-            }
-        }
-
-        private void DrawHookControls(LoadedParam param)
-        {
-            var hookedAddr = _state.GetHookedAddress(param.Name);
-
-            if (hookedAddr.HasValue)
-            {
-                ImGui.TextColored(new Vector4(0.4f, 1f, 0.4f, 1f), $"Hooked at 0x{hookedAddr.Value:X}");
-                ImGui.SameLine();
-                if (ImGui.Button("Re-hook"))
-                {
-                    _state.ClearHooks();
-                    _state.StartScan();
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Save file"))
-                    _state.SaveCurrentFile();
-            }
-            else if (_state.ScanState == ScanState.Scanning)
-            {
-                ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Scanning...");
-                ImGui.SameLine();
-                if (ImGui.Button("Cancel"))
-                    _state.CancelScan();
-            }
-            else
-            {
-                if (ImGui.Button("Hook"))
-                    _state.StartScan();
-                ImGui.SameLine();
-                string modeLabel = param.Mode switch {
-                    LoadedParam.PatternMode.Custom => $"{param.ScanPattern.Length}b",
-                    LoadedParam.PatternMode.Full   => "full",
-                    _                              => "auto"
-                };
-                ImGui.TextDisabled($"Pattern: {param.ScanPattern.Length}b [{modeLabel}] @ +0x{param.ScanOffset:X}");
             }
         }
     }

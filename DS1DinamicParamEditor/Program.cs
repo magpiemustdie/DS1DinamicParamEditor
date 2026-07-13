@@ -22,7 +22,7 @@ namespace DS1ParamEditor
         public static Sdl2Window AppWindow => _window;
 
         // Full width / compact width
-        public const int FULL_WIDTH    = 1000;
+        public const int FULL_WIDTH    = 1300;
         public const int COMPACT_WIDTH = 400;
 
         // Target ~60 fps; sleep the remainder of each frame to avoid 100% CPU
@@ -60,7 +60,7 @@ namespace DS1ParamEditor
         {
             // WinExe: no console by default — user opens it via Process menu
             VeldridStartup.CreateWindowAndGraphicsDevice(
-                new WindowCreateInfo(50, 50, Program.COMPACT_WIDTH, 900, WindowState.Normal, "DS1ParamEditor"),
+                new WindowCreateInfo(50, 50, Program.COMPACT_WIDTH, 900, WindowState.Normal, "DS1DPE"),
                 new GraphicsDeviceOptions(true, null, true, ResourceBindingModel.Improved, true, true),
                 out _window,
                 out _gd);
@@ -80,8 +80,6 @@ namespace DS1ParamEditor
 
             while (_window.Exists)
             {
-                long frameStart = stopwatch.ElapsedMilliseconds;
-
                 float deltaTime = (float)(stopwatch.Elapsed.TotalSeconds);
                 stopwatch.Restart();
 

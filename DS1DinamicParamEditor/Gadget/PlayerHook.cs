@@ -4,7 +4,7 @@ using System.Diagnostics;
 
 namespace DS1ParamEditor
 {
-    public sealed class PlayerHook : PHook
+    public sealed class PlayerHook : PHook, IGadgetHook, IDisposable
     {
         private DSROffsets Offsets;
 
@@ -28,8 +28,8 @@ namespace DS1ParamEditor
         private Dictionary<string, byte[]>? _mapSnapshot;
         private Dictionary<string, int>? _mapScanResults;
 
-        public PlayerHook(int refreshInterval, int minLifetime) :
-            base(refreshInterval, minLifetime, p => p.MainWindowTitle == "DARK SOULS™: REMASTERED")
+        public PlayerHook(int refreshInterval, int minLifetime, string? exePath = null) :
+            base(refreshInterval, minLifetime, p => MatchesExe(p, exePath))
         {
             Offsets = new DSROffsets();
             
@@ -54,6 +54,16 @@ namespace DS1ParamEditor
 
             OnHooked += PlayerHook_OnHooked;
             OnUnhooked += PlayerHook_OnUnhooked;
+        }
+
+        private static bool MatchesExe(Process p, string? exePath)
+        {
+            if (string.IsNullOrEmpty(exePath)) return false;
+            try
+            {
+                return string.Equals(p.MainModule.FileName, exePath, StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
         }
 
         private void PlayerHook_OnHooked(object sender, PHEventArgs e)
@@ -101,7 +111,8 @@ namespace DS1ParamEditor
             }
         }
 
-        public bool IsValid => Hooked && AOBScanSucceeded && ChrData1.Resolve() != IntPtr.Zero;
+        public int ProcessId => Process?.Id ?? -1;
+        public bool IsValid => Hooked && ChrData1.Resolve() != IntPtr.Zero;
         public bool IsResolving => false; // PropertyHook handles this automatically
         public bool Loaded
         {
@@ -162,10 +173,9 @@ namespace DS1ParamEditor
             angle = ChrClassWarp.ReadSingle((int)DSROffsets.ChrClassWarp.StableAngle + Offsets.ChrClassWarpBoost);
         }
 
-        public bool Warp(float x, float y, float z, float angle)
+        public bool PosWarp(float x, float y, float z, float angle)
         {
             if (!IsValid) return false;
-            
             try
             {
                 ChrMapData.WriteSingle((int)DSROffsets.ChrMapData.WarpX, x);
@@ -256,46 +266,23 @@ namespace DS1ParamEditor
         public int GetLastBonfire()
         {
             if (!IsValid) return -1;
-            try
-            {
-                return ChrClassWarp.ReadInt32((int)DSROffsets.ChrClassWarp.LastBonfire + Offsets.ChrClassWarpBoost);
-            }
+            try { return ChrClassWarp.ReadInt32((int)DSROffsets.ChrClassWarp.LastBonfire + Offsets.ChrClassWarpBoost); }
             catch { return -1; }
         }
 
-        public bool SetLastBonfire(int bonfireId)
+        public int LastBonfire
         {
-            if (!IsValid) return false;
-            try
+            get => GetLastBonfire();
+            set
             {
-                ChrClassWarp.WriteInt32((int)DSROffsets.ChrClassWarp.LastBonfire + Offsets.ChrClassWarpBoost, bonfireId);
-                return true;
+                if (IsValid)
+                    ChrClassWarp.WriteInt32((int)DSROffsets.ChrClassWarp.LastBonfire + Offsets.ChrClassWarpBoost, value);
             }
-            catch { return false; }
         }
 
-        public bool BonfireWarp(int bonfireId)
+        public void BonfireWarp()
         {
-            if (!IsValid)
-            {
-                Console.WriteLine("[BonfireWarp] Not hooked or AOB scan failed");
-                return false;
-            }
-
-            var bonfire = Array.Find(BonfireData.All, b => b.Id == bonfireId);
-            if (bonfire == null)
-            {
-                Console.WriteLine($"[BonfireWarp] Invalid bonfire ID: {bonfireId}");
-                return false;
-            }
-
-            Console.WriteLine($"[BonfireWarp] Warping to: {bonfire.Area} - {bonfire.Name} (ID: {bonfireId})");
-
-            if (!SetLastBonfire(bonfireId))
-            {
-                Console.WriteLine("[BonfireWarp] Failed to set LastBonfire");
-                return false;
-            }
+            if (!IsValid) return;
 
             byte[] asm = new byte[]
             {
@@ -311,22 +298,11 @@ namespace DS1ParamEditor
 
             IntPtr chrClassBasePtr = ChrClassBasePtr.Resolve();
             IntPtr bonfireWarpFunc = BonfireWarpAddr.Resolve();
-
-            if (chrClassBasePtr == IntPtr.Zero || bonfireWarpFunc == IntPtr.Zero)
-            {
-                Console.WriteLine($"[BonfireWarp] Missing pointers: ChrClassBase=0x{chrClassBasePtr.ToInt64():X} BonfireFunc=0x{bonfireWarpFunc.ToInt64():X}");
-                return false;
-            }
+            if (chrClassBasePtr == IntPtr.Zero || bonfireWarpFunc == IntPtr.Zero) return;
 
             Array.Copy(BitConverter.GetBytes(chrClassBasePtr.ToInt64()), 0, asm, 2, 8);
             Array.Copy(BitConverter.GetBytes(bonfireWarpFunc.ToInt64()), 0, asm, 24, 8);
-
-            Console.WriteLine($"[BonfireWarp] Executing: ChrClassBase=0x{chrClassBasePtr.ToInt64():X} Func=0x{bonfireWarpFunc.ToInt64():X}");
-
-            uint exitCode = Execute(asm);
-            Console.WriteLine($"[BonfireWarp] Thread exit code: 0x{exitCode:X}");
-            Console.WriteLine("[BonfireWarp] ✓ Warp executed (exit code is function return value)");
-            return true;
+            Execute(asm);
         }
         #endregion
 
@@ -782,6 +758,65 @@ namespace DS1ParamEditor
             catch (Exception ex) { return $"Error: {ex.Message}"; }
         }
 
+        #region Event Flags
+        private static readonly System.Collections.Generic.Dictionary<string, int> eventFlagGroups = new()
+        {
+            {"0", 0x00000}, {"1", 0x00500}, {"5", 0x05F00}, {"6", 0x0B900}, {"7", 0x11300},
+        };
+
+        private static readonly System.Collections.Generic.Dictionary<string, int> eventFlagAreas = new()
+        {
+            {"000", 0}, {"100", 1}, {"101", 2}, {"102", 3}, {"110", 4},
+            {"120", 5}, {"121", 6}, {"130", 7}, {"131", 8}, {"132", 9},
+            {"140", 10}, {"141", 11}, {"150", 12}, {"151", 13},
+            {"160", 14}, {"170", 15}, {"180", 16}, {"181", 17},
+        };
+
+        private int GetEventFlagOffset(int ID, out uint mask)
+        {
+            string idString = ID.ToString("D8");
+            if (idString.Length == 8)
+            {
+                string group = idString.Substring(0, 1);
+                string area = idString.Substring(1, 3);
+                int section = int.Parse(idString.Substring(4, 1));
+                int number = int.Parse(idString.Substring(5, 3));
+
+                if (eventFlagGroups.ContainsKey(group) && eventFlagAreas.ContainsKey(area))
+                {
+                    int offset = eventFlagGroups[group];
+                    offset += eventFlagAreas[area] * 0x500;
+                    offset += section * 128;
+                    offset += (number - (number % 32)) / 8;
+                    mask = 0x80000000 >> (number % 32);
+                    return offset;
+                }
+            }
+            throw new ArgumentException("Unknown event flag ID: " + ID);
+        }
+
+        public bool ReadEventFlag(int ID)
+        {
+            int offset = GetEventFlagOffset(ID, out uint mask);
+            return EventFlags.ReadFlag32(offset, mask);
+        }
+
+        public void WriteEventFlag(int ID, bool state)
+        {
+            int offset = GetEventFlagOffset(ID, out uint mask);
+            EventFlags.WriteFlag32(offset, mask, state);
+        }
+
+        public int CurrentAnim
+        {
+            get
+            {
+                var anim = CreateChildPointer(ChrData1, 0x68, 0x48);
+                return anim.ReadInt32(0x80);
+            }
+        }
+        #endregion
+
         public string GetBonfireDiagnostics()
         {
             if (!Hooked) return "Not hooked";
@@ -793,5 +828,10 @@ namespace DS1ParamEditor
             return $"ChrClassWarp=0x{warp.ToInt64():X} ChrClassBase=0x{basePtr.ToInt64():X} BonfireFunc=0x{func.ToInt64():X}";
         }
         #endregion
+
+        public void Dispose()
+        {
+            Stop();
+        }
     }
 }

@@ -185,6 +185,23 @@ namespace DS1ParamEditor
             file.Bnd3.Write(file.FilePath);
         }
 
+        /// <summary>Saves only a single param's entry back into the BND3, leaving other entries untouched.</summary>
+        public void SaveParam(ParamFile file, string paramName)
+        {
+            foreach (var entry in file.Bnd3.Files)
+            {
+                string name = Path.GetFileNameWithoutExtension(entry.Name);
+                if (name.Equals(paramName, StringComparison.OrdinalIgnoreCase))
+                {
+                    var lp = file.Params.FirstOrDefault(p => p.Name.Equals(paramName, StringComparison.OrdinalIgnoreCase));
+                    if (lp != null)
+                        entry.Bytes = lp.Param.Write();
+                    break;
+                }
+            }
+            file.Bnd3.Write(file.FilePath);
+        }
+
         // ── Private ───────────────────────────────────────────────────────────
 
         private static List<PARAMDEF> ReadParamdefs(string path)

@@ -38,6 +38,7 @@ namespace DS1ParamEditor.Experimental
         private CancellationTokenSource? _cts;
         private List<SfxPoint> _sfxPoints = new();
         private LoadedParam? _shadowBank;
+        private PARAM.Row? _shadowBankRow;
         private readonly Dictionary<string, float> _sfxDistances = new();
 
         // Current smoothed values
@@ -139,6 +140,7 @@ namespace DS1ParamEditor.Experimental
         public bool Initialize(string msbPath)
         {
             _shadowBank = null; // reset so it gets re-hooked
+            _shadowBankRow = null;
             try
             {
                 // 1. Load MSB and collect SFX → region positions
@@ -153,6 +155,7 @@ namespace DS1ParamEditor.Experimental
                 }
 
                 _shadowBank = LoadAndHookShadowBank();
+                _shadowBankRow = _shadowBank?.Param?.Rows?.FirstOrDefault(r => r.ID == 1);
                 if (_shadowBank == null)
                 {
                     StatusMessage = "ShadowBank not found or hook failed — check console";
@@ -251,16 +254,24 @@ namespace DS1ParamEditor.Experimental
             foreach (var sfx in _sfxPoints)
                 _sfxDistances[sfx.Name] = Vector3.Distance(playerPos, sfx.Position);
 
-            // Collect pinned SFX that have valid positions
+            // Collect pinned SFX that have valid positions and are within trigger radius
             var active = _sfxPoints
-                .Where(s => _pinnedSfxNames.Contains(s.Name) && s.HasRegion)
+                .Where(s => _pinnedSfxNames.Contains(s.Name) && s.HasRegion
+                    && _sfxDistances.GetValueOrDefault(s.Name, float.MaxValue) <= TriggerRadius)
                 .ToList();
 
             if (active.Count == 0) return;
 
-            // Update nearest for display
-            var nearest = active.OrderBy(s => _sfxDistances.GetValueOrDefault(s.Name, float.MaxValue)).First();
-            NearestSfxDist = _sfxDistances.GetValueOrDefault(nearest.Name, float.MaxValue);
+            // Update nearest for display with hysteresis
+            var nearest = active.MinBy(s => _sfxDistances.GetValueOrDefault(s.Name, float.MaxValue));
+            float nearestDist = _sfxDistances.GetValueOrDefault(nearest.Name, float.MaxValue);
+            if (_activeSfx != null && nearest != _activeSfx)
+            {
+                float currentDist = _sfxDistances.GetValueOrDefault(_activeSfx.Name, float.MaxValue);
+                if (nearestDist > currentDist - 5f)
+                    nearest = active.FirstOrDefault(s => s.Name == _activeSfx.Name) ?? nearest;
+            }
+            NearestSfxDist = nearestDist;
             NearestSfxName = nearest.Name;
 
             // Pre-compute all angles
@@ -479,6 +490,7 @@ namespace DS1ParamEditor.Experimental
 
                 Console.WriteLine($"[ShadowDir] Hooked m17_ShadowBank @ 0x{addr:X}");
                 _shadowBank = shadowParam;
+                _shadowBankRow = shadowParam?.Param?.Rows?.FirstOrDefault(r => r.ID == 1);
                 CacheWriteAddress();
                 return shadowParam;
             }
@@ -505,7 +517,7 @@ namespace DS1ParamEditor.Experimental
             if (_shadowBank == null) { Console.WriteLine("[ShadowDir] ShadowBank not hooked"); return; }
 
             var param = _shadowBank.Param;
-            var row   = param.Rows.FirstOrDefault(r => r.ID == 1);
+            var row   = _shadowBankRow;
             if (row == null) { Console.WriteLine("[ShadowDir] Row ID==1 not found"); return; }
 
             var hook = _state.GetParamHook();
@@ -557,7 +569,7 @@ namespace DS1ParamEditor.Experimental
             if (_shadowBank == null) return;
 
             var param = _shadowBank.Param;
-            var row = param.Rows.FirstOrDefault(r => r.ID == 1);
+            var row = _shadowBankRow;
             if (row == null) return;
 
             long? rotYOffset = FindFieldOffset(param, FIELD_ROT_Y);
@@ -591,7 +603,7 @@ namespace DS1ParamEditor.Experimental
             // Slow path fallback
             if (_shadowBank == null) return;
             var param = _shadowBank.Param;
-            var row = param.Rows.FirstOrDefault(r => r.ID == 1);
+            var row = _shadowBankRow;
             if (row == null) return;
             long? rotYOffset = FindFieldOffset(param, FIELD_ROT_Y);
             if (rotYOffset == null) return;
@@ -641,13 +653,13 @@ namespace DS1ParamEditor.Experimental
 
             foreach (var row in param.Rows)
             {
-                var rotY = hook.ReadParamField(_shadowBank.Name, row.DataOffset, rotYOffset.Value, PARAMDEF.DefType.f32);
+                var rotY = hook.ReadParamField(_shadowBank.Name, row.DataOffset, rotYOffset.Value, PARAMDEF.DefType.s16);
                 var rotX = rotXOffset.HasValue
-                    ? hook.ReadParamField(_shadowBank.Name, row.DataOffset, rotXOffset.Value, PARAMDEF.DefType.f32)
+                    ? hook.ReadParamField(_shadowBank.Name, row.DataOffset, rotXOffset.Value, PARAMDEF.DefType.s16)
                     : null;
 
-                string rotYStr = rotY is float fy ? $"{fy,10:F2}" : "       N/A";
-                string rotXStr = rotX is float fx ? $"{fx,10:F2}" : "       N/A";
+                string rotYStr = rotY is short sy ? $"{sy,10}" : "       N/A";
+                string rotXStr = rotX is short sx ? $"{sx,10}" : "       N/A";
                 string marker  = row.ID == 1 ? " ← writing here" : "";
                 Console.WriteLine($"║  {row.ID,6} {row.DataOffset,12:X} {rotXStr} {rotYStr}{marker} ║");
             }
@@ -762,7 +774,7 @@ namespace DS1ParamEditor.Experimental
             if (_shadowBank == null) return null;
 
             var param = _shadowBank.Param;
-            var row = param.Rows.FirstOrDefault(r => r.ID == 1);
+            var row = _shadowBankRow;
             if (row == null) return null;
 
             long? rotYOffset = FindFieldOffset(param, FIELD_ROT_Y);
@@ -771,8 +783,8 @@ namespace DS1ParamEditor.Experimental
             var hook = _state.GetParamHook();
             if (hook == null) return null;
 
-            var val = hook.ReadParamField(_shadowBank.Name, row.DataOffset, rotYOffset.Value, PARAMDEF.DefType.f32);
-            return val is float f ? f : null;
+            var val = hook.ReadParamField(_shadowBank.Name, row.DataOffset, rotYOffset.Value, PARAMDEF.DefType.s16);
+            return val is short s ? (float)s : null;
         }
 
         // ── MSB loading ───────────────────────────────────────────────────────

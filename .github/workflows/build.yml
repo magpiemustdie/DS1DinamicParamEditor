@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0
+
+      - run: dotnet build DS1ParamEditor/DS1ParamEditor.csproj -c Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DS1ParamEditor
+          path: DS1ParamEditor/bin/Release/net9.0-windows/
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            DS1ParamEditor/bin/Release/net9.0-windows/DS1ParamEditor.exe
+            DS1ParamEditor/bin/Release/net9.0-windows/DS1ParamEditor.dll
+            DS1ParamEditor/bin/Release/net9.0-windows/DS1ParamEditor.runtimeconfig.json
+            DS1ParamEditor/bin/Release/net9.0-windows/DS1ParamEditor.deps.json

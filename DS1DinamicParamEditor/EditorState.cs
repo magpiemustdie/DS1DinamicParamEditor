@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,10 +41,10 @@ namespace DS1ParamEditor
 
         // в”Ђв”Ђ Process / scan в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
         private ParamHook? _paramHook;      // For param scanning
-        private PlayerHook? _playerHook;    // For DSR-Gadget features
+        private IGadgetHook? _gadgetHook;   // For Gadget features (DSR or PTDE)
         
         public GameProcess? Process { get; private set; }
-        public PlayerHook? Player => _playerHook;
+        public IGadgetHook? Player => _gadgetHook;
         
         /// <summary>Exposes the ParamHook for direct field writes.</summary>
         public ParamHook? GetParamHook() => _paramHook;
@@ -57,7 +58,7 @@ namespace DS1ParamEditor
             }
         }
         
-        public bool IsPlayerAttached => _playerHook?.Hooked == true;
+        public bool IsPlayerAttached => _gadgetHook?.Hooked == true;
 
         // Maps param name в†’ base address. Written from Task, read from UI thread.
         private readonly Dictionary<string, nint> _hookedAddresses = new();
@@ -68,7 +69,18 @@ namespace DS1ParamEditor
         public ScanState ScanState
         {
             get => (ScanState)_scanState;
-            private set => _scanState = (int)value;
+            private set
+            {
+                _scanState = (int)value;
+                if (value != ScanState.Scanning)
+                    ScanningParamName = null;
+            }
+        }
+        private volatile string? _scanningParamName;
+        public string? ScanningParamName
+        {
+            get => _scanningParamName;
+            private set => _scanningParamName = value;
         }
         private CancellationTokenSource? _scanCts;
 
@@ -144,10 +156,11 @@ namespace DS1ParamEditor
         public void SaveCurrentFile()
         {
             if (SelectedFile == null) return;
+            if (SelectedParam == null) return;
             try
             {
-                _store.Save(SelectedFile);
-                SetStatus($"Saved '{SelectedFile.FileName}'.");
+                _store.SaveParam(SelectedFile, SelectedParam.Name);
+                SetStatus($"Saved '{SelectedParam.Name}' → '{SelectedFile.FileName}'.");
             }
             catch (Exception ex)
             {
@@ -260,6 +273,7 @@ namespace DS1ParamEditor
                 }
                 catch (OperationCanceledException)
                 {
+                    if (ct != _lockCamScanCts?.Token) return;
                     LockCamScanState = ScanState.Idle;
                     SetStatus("LockCamParam scan cancelled.");
                 }
@@ -425,45 +439,64 @@ namespace DS1ParamEditor
             // Create ParamHook for param scanning
             if (_paramHook == null)
             {
-                _paramHook = new ParamHook(1000, 100); // 1s refresh, 100ms min lifetime
+                _paramHook = new ParamHook(1000, 100, Config.SelectedExePath); // 1s refresh, 100ms min lifetime
                 _paramHook.OnHooked += (s, e) =>
                 {
                     Process = GameProcess.TryAttach(_paramHook);
                     if (Process != null)
-                        SetStatus($"Attached to DSR {_paramHook.Version} (Params)");
+                        SetStatus($"Attached to {Config.SelectedExe} {_paramHook.Version} (Params)");
                 };
                 _paramHook.OnUnhooked += (s, e) =>
                 {
                     Process?.Dispose();
                     Process = null;
+                    ClearScanState();
                     SetStatus("Game process exited (Params).");
                 };
                 _paramHook.Start();
             }
             
-            // Create PlayerHook for DSR-Gadget features
-            if (_playerHook == null)
+            // Create gadget hook (DSR or PTDE)
+            if (_gadgetHook == null)
             {
-                _playerHook = new PlayerHook(1000, 100);
-                _playerHook.OnHooked += (s, e) =>
+                _gadgetHook = CreateGadgetHook(Config.SelectedExePath);
+                _gadgetHook.OnHooked += (s, e) =>
                 {
-                    SetStatus($"DSR-Gadget ready (version {_playerHook.Version})");
+                    SetStatus($"{Config.SelectedExe} Gadget ready (version {_gadgetHook.Version})");
                 };
-                _playerHook.OnUnhooked += (s, e) =>
+                _gadgetHook.OnUnhooked += (s, e) =>
                 {
-                    SetStatus("DSR-Gadget disconnected.");
+                    SetStatus("Gadget disconnected.");
                 };
-                _playerHook.Start();
+                _gadgetHook.Start();
             }
 
-            if (!_paramHook.Hooked && !_playerHook.Hooked)
+            if (!_paramHook.Hooked && !_gadgetHook.Hooked)
             {
-                SetStatus("Waiting for Dark Souls Remastered...");
+                SetStatus($"Waiting for {Config.SelectedExe}...");
             }
-            else if (_paramHook.Hooked && _playerHook.Hooked)
+            else if (_paramHook.Hooked && _gadgetHook.Hooked)
             {
                 SetStatus($"Already attached (Params + Gadget)");
             }
+        }
+
+        private static IGadgetHook CreateGadgetHook(string exePath)
+        {
+            if (string.IsNullOrEmpty(exePath))
+                return new PlayerHook(1000, 100, null); // fallback
+
+            string exeName = Path.GetFileNameWithoutExtension(exePath);
+            // Dark Souls Remastered uses "DarkSoulsRemastered.exe"
+            if (exeName.Contains("Remastered", StringComparison.OrdinalIgnoreCase) ||
+                exeName.Contains("DSR", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine($"[EditorState] Creating DSR gadget hook for {exeName}");
+                return new PlayerHook(1000, 100, exePath);
+            }
+            // Assume PTDE for everything else (DARKSOULS.exe etc.)
+            Console.WriteLine($"[EditorState] Creating PTDE gadget hook for {exeName}");
+            return new PtdHook(1000, 100, exePath);
         }
 
         // в”Ђв”Ђ Scanning в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
@@ -498,6 +531,7 @@ namespace DS1ParamEditor
             _scanCts = new CancellationTokenSource(TimeSpan.FromSeconds(30)); // 30s timeout
             var ct = _scanCts.Token;
 
+            ScanningParamName = SelectedParam.Name;
             ScanState = ScanState.Scanning;
             SetStatus($"Scanning for '{SelectedParam.Name}'...");
 
@@ -525,6 +559,8 @@ namespace DS1ParamEditor
                 }
                 catch (OperationCanceledException)
                 {
+                    // Ignore stale cancellation from a previous scan
+                    if (ct != _scanCts?.Token) return;
                     ScanState = ScanState.Idle;
                     SetStatus(ct.IsCancellationRequested && !ct.CanBeCanceled
                         ? $"Scan timed out for '{param.Name}' (30s). Pattern may not match memory."
@@ -538,9 +574,89 @@ namespace DS1ParamEditor
             }, ct);
         }
 
+        public void StartScan(LoadedParam param, ParamFile file)
+        {
+            if (param == null || file == null)
+            {
+                SetStatus("Select a param first.", true);
+                return;
+            }
+
+            if (!IsAttached)
+            {
+                SetStatus("Not attached to game process.", true);
+                return;
+            }
+
+            var cached = _paramHook?.GetCachedAddress(param.Name);
+            if (cached.HasValue)
+            {
+                lock (_addrLock)
+                    _hookedAddresses[param.Name] = cached.Value;
+                ScanState = ScanState.Done;
+                SetStatus($"'{param.Name}' already cached at 0x{cached.Value:X}");
+                return;
+            }
+
+            _scanCts?.Cancel();
+            _scanCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var ct = _scanCts.Token;
+
+            ScanningParamName = param.Name;
+            ScanState = ScanState.Scanning;
+            SetStatus($"Scanning for '{param.Name}'...");
+
+            var hook = _paramHook!;
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    nint baseAddr = hook.ScanAndCache(param.Name, param.ScanPattern, param.ScanOffset, ct);
+                    if (baseAddr != nint.Zero)
+                    {
+                        lock (_addrLock)
+                            _hookedAddresses[param.Name] = baseAddr;
+                        ScanState = ScanState.Done;
+                        SetStatus($"Hooked '{param.Name}' at 0x{baseAddr:X}");
+                    }
+                    else
+                    {
+                        ScanState = ScanState.Failed;
+                        SetStatus($"Pattern not found for '{param.Name}'.", true);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    if (ct != _scanCts?.Token) return;
+                    ScanState = ScanState.Idle;
+                    SetStatus(ct.IsCancellationRequested && !ct.CanBeCanceled
+                        ? $"Scan timed out for '{param.Name}' (30s)."
+                        : "Scan cancelled.");
+                }
+                catch (Exception ex)
+                {
+                    ScanState = ScanState.Failed;
+                    SetStatus($"Scan error: {ex.Message}", true);
+                }
+            }, ct);
+        }
+
         public void CancelScan()
         {
             _scanCts?.Cancel();
+        }
+
+        public void ClearHook(string paramName)
+        {
+            if (string.Equals(paramName, "LockCamParam", StringComparison.OrdinalIgnoreCase))
+            {
+                ClearLockCamHook();
+                return;
+            }
+            _paramHook?.RemoveFromCache(paramName);
+            lock (_addrLock)
+                _hookedAddresses.Remove(paramName);
         }
 
         public void ClearHooks()
@@ -577,6 +693,20 @@ namespace DS1ParamEditor
 
         // в”Ђв”Ђ Helpers в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђ
 
+        /// <summary>Clears scan state and hooked addresses on disconnect.</summary>
+        private void ClearScanState()
+        {
+            _scanCts?.Cancel();
+            _scanCts = null;
+            _lockCamScanCts?.Cancel();
+            _lockCamScanCts = null;
+            lock (_addrLock)
+                _hookedAddresses.Clear();
+            _paramHook?.ClearCache();
+            ScanState = ScanState.Idle;
+            LockCamScanState = ScanState.Idle;
+        }
+
         private void ResetAll()
         {
             ResetParams();
@@ -587,11 +717,14 @@ namespace DS1ParamEditor
             
             _paramHook?.Stop();
             _paramHook = null;
-            _playerHook?.Stop();
-            _playerHook = null;
+            _gadgetHook?.Stop();
+            _gadgetHook?.Dispose();
+            _gadgetHook = null;
             
             Process?.Dispose();
             Process = null;
+
+            _mapAnchorCache.Clear();
         }
 
         private void ResetParams()

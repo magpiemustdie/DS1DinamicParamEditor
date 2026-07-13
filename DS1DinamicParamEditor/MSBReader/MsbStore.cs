@@ -66,6 +66,9 @@ namespace DS1ParamEditor.MSBReader
         /// <summary>Unloads an MSB from memory.</summary>
         public void Unload(LoadedMsb loaded) => _loaded.Remove(loaded.FilePath);
 
+        /// <summary>Clears all loaded MSB data.</summary>
+        public void Reset() => _loaded.Clear();
+
         // ── Parts ─────────────────────────────────────────────────────────────
 
         /// <summary>Gets all parts of a given type.</summary>

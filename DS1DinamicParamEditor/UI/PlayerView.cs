@@ -19,11 +19,18 @@ namespace DS1ParamEditor
             _state = state;
         }
 
+        public void Reset()
+        {
+            _warpX = _warpY = _warpZ = _warpAngle = 0;
+            _bonfireIdx = 0;
+            _areaFilter = string.Empty;
+        }
+
         public void Draw()
         {
             if (!_state.IsPlayerAttached || _state.Player == null)
             {
-                ImGui.TextDisabled("DSR-Gadget not connected.");
+                ImGui.TextDisabled("Gadget not connected.");
                 ImGui.TextDisabled("Use 'Connect to game' button above.");
                 return;
             }
@@ -36,13 +43,6 @@ namespace DS1ParamEditor
                 return;
             }
 
-            if (!player.AOBScanSucceeded)
-            {
-                ImGui.TextColored(new Vector4(1f, 0.3f, 0.3f, 1f), "AOB scan failed!");
-                ImGui.TextDisabled("Game version may not be supported.");
-                return;
-            }
-
             if (!player.IsValid)
             {
                 ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Waiting for world to load...");
@@ -51,7 +51,7 @@ namespace DS1ParamEditor
             }
 
             // Show game version
-            ImGui.TextColored(new Vector4(0.5f, 1f, 0.5f, 1f), $"DSR {player.Version}");
+            ImGui.TextColored(new Vector4(0.5f, 1f, 0.5f, 1f), $"Game {player.Version}");
             ImGui.Separator();
 
             // ── Live position ─────────────────────────────────────────────────
@@ -106,7 +106,7 @@ namespace DS1ParamEditor
 
             if (ImGui.Button("Warp to Position##do", new Vector2(-1, 0)))
             {
-                if (player.Warp(_warpX, _warpY, _warpZ, _warpAngle))
+                if (player.PosWarp(_warpX, _warpY, _warpZ, _warpAngle))
                     Console.WriteLine($"[PlayerView] Warped to ({_warpX:F2}, {_warpY:F2}, {_warpZ:F2})");
                 else
                     Console.WriteLine("[PlayerView] Position warp failed");
@@ -156,17 +156,19 @@ namespace DS1ParamEditor
                 if (_bonfireIdx >= 0 && _bonfireIdx < BonfireData.All.Length)
                 {
                     int bonfireId = BonfireData.All[_bonfireIdx].Id;
-                    player.BonfireWarp(bonfireId);
-
-                    if (_state.AutoLoadParamsOnWarp)
+                    if (bonfireId >= 0)
                     {
-                        // Use the bonfire ID we just warped to — no need to re-read memory
-                        player.SetLastBonfire(bonfireId); // ensure it's set
-                        var mapBytes = player.ReadMapId();
-                        if (mapBytes != null && mapBytes.Length >= 2)
+                        player.LastBonfire = bonfireId;
+                        player.BonfireWarp();
+
+                        if (_state.AutoLoadParamsOnWarp)
                         {
-                            string mapName = $"m{mapBytes[0]:X2}_{mapBytes[1]:X2}";
-                            _state.LoadParamsByMapName(mapName);
+                            var mapBytes = player.ReadMapId();
+                            if (mapBytes != null && mapBytes.Length >= 2)
+                            {
+                                string mapName = $"m{mapBytes[0]:X2}_{mapBytes[1]:X2}";
+                                _state.LoadParamsByMapName(mapName);
+                            }
                         }
                     }
                 }

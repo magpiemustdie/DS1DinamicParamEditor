@@ -6,7 +6,10 @@
 		<UseWindowsForms>true</UseWindowsForms>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<StartupObject></StartupObject>
+		<AssemblyName>DS1DPE</AssemblyName>
+		<RootNamespace>DS1ParamEditor</RootNamespace>
 		<ApplicationIcon>bonewheel.ico</ApplicationIcon>
 	</PropertyGroup>
 
