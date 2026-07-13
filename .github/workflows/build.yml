@@ -12,8 +12,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Checkout SoulsFormatsNEXT
+        uses: actions/checkout@v4
         with:
-          submodules: recursive
+          repository: soulsmods/SoulsFormatsNEXT
+          path: SoulsFormatsNEXT
+
+      - name: Checkout PropertyHook
+        uses: actions/checkout@v4
+        with:
+          repository: JKAnderson/PropertyHook
+          path: PropertyHook
 
       - uses: actions/setup-dotnet@v4
         with:
