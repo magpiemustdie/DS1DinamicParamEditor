@@ -1,0 +1,11 @@
+--- a/SoulsFormats/Formats/PARAM/PARAM/Row.cs
++++ b/SoulsFormats/Formats/PARAM/PARAM/Row.cs
+@@ -32,7 +32,7 @@ namespace SoulsFormats
+             /// </summary>
+             public IReadOnlyList<Cell> Cells { get; private set; }
+ 
+-            internal long DataOffset;
++            public long DataOffset { get; set; }
+ 
+             /// <summary>
+             /// Creates a new row based on the given paramdef with default values.

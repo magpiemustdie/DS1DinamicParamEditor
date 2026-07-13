@@ -21,6 +21,12 @@ jobs:
           repository: soulsmods/SoulsFormatsNEXT
           path: SoulsFormatsNEXT
 
+      - name: Patch SoulsFormatsNEXT
+        shell: pwsh
+        run: |
+          $file = "SoulsFormatsNEXT/SoulsFormats/Formats/PARAM/PARAM/Row.cs"
+          (Get-Content $file) -replace 'internal long DataOffset;', 'public long DataOffset { get; set; }' | Set-Content $file
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0
