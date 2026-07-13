@@ -152,6 +152,8 @@ namespace DS1ParamEditor
 
             var visibleRows = _cachedVisible;
             if (visibleRows == null || visibleRows.Count == 0) return;
+
+            DrawPagination(_cachedFiltered.Count);
             ImGui.Separator();
 
             // ── Field labels (rebuilt on param change only) ─────────────────────
@@ -424,20 +426,8 @@ namespace DS1ParamEditor
 
             if (unpinned.Count > MAX_COLS)
             {
-                int totalPages = (unpinned.Count + MAX_COLS - 1) / MAX_COLS;
                 if (_tablePageOffset >= unpinned.Count)
                     _tablePageOffset = 0;
-
-                int curPage = _tablePageOffset / MAX_COLS;
-
-                if (ImGui.ArrowButton("##prev", ImGuiDir.Left) && curPage > 0)
-                    _tablePageOffset -= MAX_COLS;
-                ImGui.SameLine();
-                ImGui.Text($"Page {curPage + 1}/{totalPages} ({unpinned.Count} unpinned)");
-                ImGui.SameLine();
-                if (ImGui.ArrowButton("##next", ImGuiDir.Right) && curPage < totalPages - 1)
-                    _tablePageOffset += MAX_COLS;
-                ImGui.SameLine();
 
                 int skip = _tablePageOffset;
                 int take = Math.Min(MAX_COLS, unpinned.Count - skip);
@@ -455,6 +445,43 @@ namespace DS1ParamEditor
             result.AddRange(pinned);
             result.AddRange(unpinned);
             return result;
+        }
+
+        private void DrawPagination(int filteredCount)
+        {
+            int unpinnedCount = filteredCount - _cachedPinSet.Count;
+            if (unpinnedCount <= MAX_COLS) return;
+
+            int totalPages = (unpinnedCount + MAX_COLS - 1) / MAX_COLS;
+            if (_tablePageOffset >= unpinnedCount)
+                _tablePageOffset = 0;
+
+            int curPage = _tablePageOffset / MAX_COLS;
+
+            if (ImGui.ArrowButton("##prev", ImGuiDir.Left) && curPage > 0)
+                _tablePageOffset -= MAX_COLS;
+            ImGui.SameLine();
+
+            int pageInput = curPage + 1;
+            ImGui.SetNextItemWidth(50);
+            if (ImGui.InputInt("##pageinput", ref pageInput, 0, 0))
+            {
+                pageInput = Math.Clamp(pageInput, 1, totalPages);
+                _tablePageOffset = (pageInput - 1) * MAX_COLS;
+            }
+            ImGui.SameLine();
+            ImGui.TextDisabled($"/ {totalPages}");
+            ImGui.SameLine();
+            if (ImGui.ArrowButton("##next", ImGuiDir.Right) && curPage < totalPages - 1)
+                _tablePageOffset += MAX_COLS;
+            ImGui.SameLine();
+            ImGui.TextDisabled($"({unpinnedCount} unpinned)");
+            ImGui.SameLine();
+            if (ImGui.Button("Reset"))
+            {
+                _tablePageOffset = 0;
+                _cachedVisible = null;
+            }
         }
 
         private List<(int ci, int off, int fsize)> BuildVisibleFields(List<PARAM.Cell> firstCells)
