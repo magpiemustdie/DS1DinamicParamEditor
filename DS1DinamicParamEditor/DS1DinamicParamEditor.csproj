@@ -37,7 +37,12 @@
 
 	<ItemGroup>
 	  <ProjectReference Include="..\..\SoulsFormatsNEXT\SoulsFormats\SoulsFormats.csproj" />
-	  <ProjectReference Include="..\..\PropertyHook\PropertyHook\PropertyHook.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Reference Include="PropertyHook">
+	    <HintPath>..\..\PropertyHook\PropertyHook\bin\Release\net48\PropertyHook.dll</HintPath>
+	  </Reference>
 	</ItemGroup>
 
 </Project>

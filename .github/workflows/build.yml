@@ -32,7 +32,7 @@ jobs:
           dotnet-version: 9.0
 
       - name: Build PropertyHook
-        run: dotnet build PropertyHook/PropertyHook/PropertyHook.csproj -c Release -p:TargetFramework=netstandard2.0
+        run: dotnet msbuild PropertyHook/PropertyHook/PropertyHook.csproj -p:Configuration=Release -p:RestorePackages=false
 
       - name: Build SoulsFormatsNEXT
         run: dotnet build SoulsFormatsNEXT/SoulsFormats/SoulsFormats.csproj -c Release
