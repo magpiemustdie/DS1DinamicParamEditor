@@ -31,6 +31,12 @@ jobs:
         with:
           dotnet-version: 9.0
 
+      - name: Build PropertyHook
+        run: dotnet build PropertyHook/PropertyHook/PropertyHook.csproj -c Release
+
+      - name: Build SoulsFormatsNEXT
+        run: dotnet build SoulsFormatsNEXT/SoulsFormats/SoulsFormats.csproj -c Release
+
       - run: dotnet build DS1ParamEditor/DS1DinamicParamEditor/DS1DinamicParamEditor.csproj -c Release
 
       - uses: actions/upload-artifact@v4
