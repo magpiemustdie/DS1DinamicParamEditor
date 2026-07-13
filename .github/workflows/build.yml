@@ -12,6 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: DS1ParamEditor
 
       - name: Checkout SoulsFormatsNEXT
         uses: actions/checkout@v4
@@ -29,16 +31,16 @@ jobs:
         with:
           dotnet-version: 9.0
 
-      - run: dotnet build DS1DinamicParamEditor/DS1DinamicParamEditor.csproj -c Release
+      - run: dotnet build DS1ParamEditor/DS1DinamicParamEditor/DS1DinamicParamEditor.csproj -c Release
 
       - uses: actions/upload-artifact@v4
         with:
           name: DS1DPE
-          path: DS1DinamicParamEditor/bin/Release/net9.0-windows/
+          path: DS1ParamEditor/DS1DinamicParamEditor/bin/Release/net9.0-windows/
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            DS1DinamicParamEditor/bin/Release/net9.0-windows/DS1DPE.exe
+            DS1ParamEditor/DS1DinamicParamEditor/bin/Release/net9.0-windows/DS1DPE.exe
