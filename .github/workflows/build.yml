@@ -25,10 +25,13 @@ jobs:
         with:
           dotnet-version: 9.0
 
-      - name: Build SoulsFormatsNEXT
-        run: dotnet build SoulsFormatsNEXT/SoulsFormats/SoulsFormats.csproj -c Release
+      - name: Restore NuGet
+        run: dotnet restore DS1ParamEditor/DS1DinamicParamEditor/DS1DinamicParamEditor.csproj
 
-      - run: dotnet build DS1ParamEditor/DS1DinamicParamEditor/DS1DinamicParamEditor.csproj -c Release
+      - name: Build SoulsFormatsNEXT
+        run: dotnet build SoulsFormatsNEXT/SoulsFormats/SoulsFormats.csproj -c Release --no-restore
+
+      - run: dotnet build DS1ParamEditor/DS1DinamicParamEditor/DS1DinamicParamEditor.csproj -c Release --no-restore
 
       - uses: actions/upload-artifact@v4
         with:
